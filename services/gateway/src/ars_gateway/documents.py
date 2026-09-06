@@ -8,15 +8,19 @@ AI assistant, and this is the door that line would come through.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
 import json
 import re
 import time
 from dataclasses import asdict, dataclass
+from collections.abc import Sequence
 from pathlib import Path
 
 from ars_compute.language import detect_matrix_language
 from ars_protocol import (
+    SUPPORTED_LANGUAGES,
     Language, MemoryKind, MemoryRecord, Provenance, Sensitivity, SourceKind, TrustLevel,
     new_id,
 )
@@ -163,6 +167,8 @@ def detect_language(text: str) -> Language:
     return detect_matrix_language(text[:4000]).language
 
 
+log = logging.getLogger("ars.gateway.documents")
+
 CATALOGUE_PREFIX = "document:"
 
 _LABEL = re.compile(r"^(?P<name>.+?)\s+\(\d+/\d+\)$")
@@ -186,10 +192,15 @@ class DocumentLibrary:
     and `rehydrate` drops any whose chunks have gone.
     """
 
-    def __init__(self, memory) -> None:
+    def __init__(self, memory, *, translator=None,
+                 languages: Sequence[Language] = SUPPORTED_LANGUAGES) -> None:
         self.memory = memory
+        self.translator = translator
+        """A `TranslationEngine`, or None to index documents only in their own language."""
+        self.languages = tuple(languages)
         self.docs: dict[str, LearnedDocument] = {}
         self._chunk_ids: dict[str, list[str]] = {}
+        self._translating: dict[str, asyncio.Task] = {}
 
     async def rehydrate(self) -> int:
         """Rebuild the catalogue from the store. Returns how many documents came back."""
@@ -300,11 +311,80 @@ class DocumentLibrary:
         self.docs[doc_id] = doc
         self._chunk_ids[doc_id] = ids
         await self._persist(doc, ids)
+
+        # Translation happens after the upload has returned, never during it. The document
+        # is already answerable in its own language at this point; the copies only widen
+        # which questions reach it. A 200-chunk PDF is minutes of model time, and making
+        # the user watch a spinner for that would trade the thing they asked for (their
+        # file, learned) for the thing they did not (a complete index, eventually).
+        if self.translator is not None and len(self.languages) > 1:
+            task = asyncio.create_task(
+                self._translate_document(doc_id), name=f"translate-{doc_id}"
+            )
+            self._translating[doc_id] = task
+            task.add_done_callback(lambda _t, d=doc_id: self._translating.pop(d, None))
         return doc
+
+    async def _translate_document(self, doc_id: str) -> int:
+        """Index every chunk of a document in the other languages A.R.S speaks.
+
+        This is what makes a German lease answer an English question. The document tier
+        matches a question to a passage with an embedding model that cannot bridge
+        languages — measured, and a bigger model does not fix it — so the passage is
+        bridged instead. Measured on a German lease: English questions answered go from
+        1 of 4 to 4 of 4, Romanian from 0 of 4 to 3 of 4, with no cost on the hot path
+        because all of it happens here.
+
+        Failures are per chunk and per language, deliberately. A chunk whose translation
+        is refused simply is not indexed in that language; the document keeps working in
+        every language whose translation did land, which is strictly better than a
+        document that is not learned because one paragraph confused a model.
+        """
+        source_ids = list(self._chunk_ids.get(doc_id, ()))
+        doc = self.docs.get(doc_id)
+        if doc is None or not source_ids:
+            return 0
+
+        made = 0
+        for record_id in source_ids:
+            original = await self.memory.get(record_id)
+            if original is None:
+                continue
+            for target in self.languages:
+                if target is original.language:
+                    continue
+                try:
+                    text = await self.translator.translate_text(
+                        original.text, source=original.language, target=target
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log.warning("no %s copy of %s: %s", target.value, record_id, exc)
+                    continue
+                copy = await self.memory.remember(MemoryRecord(
+                    kind=original.kind,
+                    text=text,
+                    language=target,
+                    sensitivity=original.sensitivity,
+                    provenance=original.provenance,
+                    origin_id=original.id,
+                ))
+                self._chunk_ids[doc_id].append(copy.id)
+                made += 1
+            await self._persist(doc, self._chunk_ids[doc_id])
+        log.info("%s: indexed %d translated chunks", doc.name, made)
+        return made
 
     async def forget(self, doc_id: str) -> int:
         """Remove a document and every chunk it produced. Deleting the catalogue entry
         while leaving the chunks searchable would be a lie."""
+        # Stop translating something the user has just deleted. Without this the task
+        # keeps running and re-indexes copies of a document that no longer exists.
+        task = self._translating.pop(doc_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+
         removed = 0
         for record_id in self._chunk_ids.pop(doc_id, []):
             removed += await self.memory.forget(record_id=record_id)

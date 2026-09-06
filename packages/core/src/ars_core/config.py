@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Annotated
 
-from ars_protocol import Language
+from ars_protocol import SUPPORTED_LANGUAGES, Language
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -73,7 +73,14 @@ class ArsConfig(BaseSettings):
     env: str = "dev"
     data_dir: Path = Path("./var")
     log_level: str = "INFO"
-    languages: Annotated[tuple[Language, ...], NoDecode] = (Language.EN, Language.RO)
+    languages: Annotated[tuple[Language, ...], NoDecode] = SUPPORTED_LANGUAGES
+    """Defaults to the protocol's set, never to a copy of it.
+
+    This was a hard-coded `(EN, RO)`, and when German was added to
+    `ars_protocol.SUPPORTED_LANGUAGES` the two silently disagreed: the gateway advertised
+    two languages, and the document translator refused every German pair as an unsupported
+    direction. CLAUDE.md rule 1 — a type defined twice is a bug — applies to the set of
+    languages as much as to a message shape."""
 
     @field_validator("languages", mode="before")
     @classmethod
@@ -95,6 +102,15 @@ class ArsConfig(BaseSettings):
                 return tuple(json.loads(text))
             return tuple(part.strip() for part in text.split(",") if part.strip())
         return v
+
+    translate_documents: bool = True
+    """Index an uploaded document in every language A.R.S speaks, not only its own.
+
+    On, because it is what makes a German lease answer an English question: the document
+    tier's embedding model cannot bridge languages, so the passage is bridged instead.
+    Costs model time at upload — in the background, after the file is already answerable —
+    and nothing on the hot path. Turn it off on a machine where the model is slow enough
+    that a large upload would be churning for an hour."""
 
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)

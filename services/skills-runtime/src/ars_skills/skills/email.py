@@ -27,6 +27,7 @@ from typing import Any
 
 import anyio
 from ars_protocol import (
+    SUPPORTED_LANGUAGES,
     Capability,
     Language,
     Provenance,
@@ -101,7 +102,7 @@ class EmailSkill(Skill):
             description="Search, read and send the user's email.",
             runtime=RT.PYTHON_INPROC,
             trusted=True,
-            languages=(Language.EN, Language.RO),
+            languages=SUPPORTED_LANGUAGES,
             capabilities=(Capability.EMAIL_SEARCH, Capability.EMAIL_READ, Capability.EMAIL_SEND),
             network_allowlist=(),  # IMAP/SMTP are not HTTP; hosts come from the account config
             tools=(

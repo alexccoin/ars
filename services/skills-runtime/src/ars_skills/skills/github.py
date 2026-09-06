@@ -11,6 +11,7 @@ import base64
 from typing import Any
 
 from ars_protocol import (
+    SUPPORTED_LANGUAGES,
     Capability,
     Language,
     Provenance,
@@ -39,7 +40,7 @@ class GitHubSkill(Skill):
             description="Read repositories, files, issues and code on GitHub.",
             runtime=RT.PYTHON_INPROC,
             trusted=True,
-            languages=(Language.EN, Language.RO),
+            languages=SUPPORTED_LANGUAGES,
             capabilities=(Capability.GITHUB_READ_PUBLIC, Capability.GITHUB_READ_PRIVATE),
             network_allowlist=("api.github.com", "raw.githubusercontent.com"),
             tools=(

@@ -127,18 +127,29 @@ far above the noise floor as a real answer sits". Every turn reports the tier th
 answered it and why, and the escalation endpoint records that a question needed a higher
 tier next time — which is what actually tunes the threshold.
 
-**Known limit: the document tier is same-language.** A Romanian question finds a Romanian
-document (measured 0.844) and an English one an English document (0.831); the same
-question asked in the *other* language scores 0.778-0.817, which is the range unrelated
-questions also reach. No threshold separates those, so a cross-language question falls
-through to the model — which reads the passage as context and answers correctly, in the
-language it was asked.
+**The document tier was same-language, and is not any more.** A Romanian question finds a
+Romanian document (measured 0.844) and an English one an English document (0.831); the
+same question asked in the *other* language scored 0.778-0.817, which is the range
+unrelated questions also reach. No threshold separates those, and a larger embedding model
+does not help — `intfloat/multilingual-e5-base` was measured on the same fixtures and
+separates cross-language matches from irrelevant ones by **-0.007**, worse than the small
+model it would replace.
 
-A larger model does not fix it: `intfloat/multilingual-e5-base` was measured on the same
-fixtures and separates cross-language matches from irrelevant ones by **-0.007** — it
-cannot tell them apart either — while being *worse* than e5-small on the same-language
-tier (-0.014 against +0.007). So the 768-dimensional migration buys nothing and was not
-made. Re-run the benchmark against a candidate before proposing that again.
+So the passage is bridged instead of the question. Every uploaded document is indexed in
+all three languages: the copies are made in the background after the upload returns,
+carry `origin_id` back to the passage they came from, and cost nothing on the hot path.
+Measured on a German lease — English questions answered went from 1 of 4 to 4 of 4,
+Romanian from 0 of 4 to 3 of 4, and live, a German lease now answers "How much is the rent
+per month?" from the document tier at 100% in 11 ms.
+
+Two things that had to be true first, both correctness bugs in their own right: `forget()`
+follows `origin_id`, or a deleted document keeps answering through its translation; and
+the ambiguity rule skips a hit's own translations, or every passage is refused for being
+ambiguous with itself.
+
+Translation quality is the model's, and it is not uniform: chrF++ runs 82 for de->en and
+59 for de->ro, which is the weak leg and the first thing to re-measure if answers read
+badly in Romanian.
 
 Which model built the vector index is recorded in `memory_meta` and checked on every
 open: vectors from two models are not comparable, and a silently mixed index returns the

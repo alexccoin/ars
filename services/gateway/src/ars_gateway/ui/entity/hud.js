@@ -28,6 +28,8 @@
    prefers-reduced-motion guard.
    ========================================================================== */
 
+import { t } from '../panels/i18n.js';
+
 /* --------------------------------------------------------------------------
    Styles. One string, injected once, scoped by the ars-hud-* classes so the
    fallback stylesheet in index.html stays a valid base layer underneath.
@@ -497,7 +499,7 @@ export function ticker({ id, text } = {}) {
 }
 
 /* ==========================================================================
-   tierIndicator({ tier, score, reason, elapsedMs, gpu, cloud }) -> { root, update }
+   tierIndicator({ tier, score, reason, elapsedMs, gpu, cloud, lang, chip }) -> { root, update }
 
    `tier` arrives already translated (console.js passes t('tier.<key>')), so the
    colour must NOT be derived from that string alone or the Romanian console
@@ -535,9 +537,13 @@ export function tierIndicator(init = {}) {
     if (typeof next.elapsedMs === 'number') bits.push(`${Math.round(next.elapsedMs)} ms`);
     meta.textContent = bits.join(' · ');
     /* The one thing a private assistant must never hide: that a turn left the
-       device. It gets its own chip, in the warm end of the tier ramp. */
-    if (next.cloud) { chip.hidden = false; chip.textContent = 'off-device'; }
-    else if (next.gpu) { chip.hidden = false; chip.textContent = 'gpu'; }
+       device. It gets its own chip, in the warm end of the tier ramp.
+       Text comes from panels/i18n.js — never hardcoded here — and follows
+       <html lang>, which app.js already sets on every language change. */
+    const lang = next.lang || document.documentElement.lang || 'en';
+    if (next.chip === false) { chip.hidden = true; chip.textContent = ''; }
+    else if (next.cloud) { chip.hidden = false; chip.textContent = t('tier.cloud_badge', lang); }
+    else if (next.gpu) { chip.hidden = false; chip.textContent = t('tier.gpu_badge', lang); }
     else { chip.hidden = true; chip.textContent = ''; }
     root.title = next.reason || '';
   }

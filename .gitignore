@@ -55,3 +55,8 @@ token.json
 .DS_Store
 .idea/
 *.swp
+
+# Screenshots and renders produced while verifying the interface. Evidence for a review,
+# not source: they are large, they change on every run, and nothing builds from them.
+.artifacts/
+var/voice-auditions/

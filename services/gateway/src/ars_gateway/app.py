@@ -20,6 +20,7 @@ from ars_auth.audit import AuditLog
 from ars_auth.guard import PolicyGuardEngine
 from ars_auth.store import SqliteGrantStore
 from ars_compute.backends.ollama import OllamaBackend
+from ars_compute.translation import LlmTranslationEngine
 from ars_compute.turn import TurnOrchestrator
 from ars_core import ArsConfig
 from ars_memory.config import MemoryConfig
@@ -57,6 +58,7 @@ class Ars:
         self.brain: Any = None
         self.library: Any = None
         self.skills: Any = None
+        self.translator: Any = None
         self.voice: Any = None
         """Built on the first press of the mic button, never at startup: the voice models
         are ~1.6 GB and a user who only types should not wait for them."""
@@ -88,7 +90,17 @@ class Ars:
             backend=self.backend, guard=self.guard, skills=self.skills
         )
         self.brain = TieredBrain(memory=self.memory)
-        self.library = DocumentLibrary(self.memory)
+        # Documents are indexed in every language A.R.S speaks, not only their own. The
+        # embedding model cannot match a question to a passage across languages — measured,
+        # and a bigger model does not fix it — so the passage is bridged at ingest instead,
+        # where it costs nothing on the hot path.
+        self.translator = (
+            LlmTranslationEngine(self.backend, languages=self.config.languages)
+            if self.config.translate_documents else None
+        )
+        self.library = DocumentLibrary(
+            self.memory, translator=self.translator, languages=self.config.languages
+        )
         learned = await self.library.rehydrate()
         if learned:
             log.info("%d documents already learned", learned)

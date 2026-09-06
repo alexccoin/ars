@@ -34,6 +34,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from ars_protocol import (
+    SUPPORTED_LANGUAGES,
     BehaviourDomain,
     ContentBlock,
     Language,
@@ -242,7 +243,7 @@ class BehaviourLearner:
 
     def _signal_of(self, observation: Observation) -> str:
         for signal in self._evidence:
-            for lang in (Language.EN, Language.RO):
+            for lang in SUPPORTED_LANGUAGES:
                 template = prompts.observation_templates()["signal"][signal][lang.value]
                 if "{hour}" in template:
                     prefix = template.split("{hour}")[0]

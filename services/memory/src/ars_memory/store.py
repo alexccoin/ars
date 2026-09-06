@@ -222,6 +222,12 @@ class SqliteMemoryStore(MemoryStore):
         )
         return tuple(self._row_to_record(row) for row in rows)
 
+    async def get(self, record_id: str) -> MemoryRecord | None:
+        """One record by id, or None. Superseded records come back: a caller that asked
+        for a specific id wants that id, not the store's opinion of what replaced it."""
+        rows = await self._fetch_rows_where("id = ?", (record_id,))
+        return self._row_to_record(rows[0]) if rows else None
+
     async def exists(self, record_id: str) -> bool:
         """Whether a record is still stored. Used by callers that keep their own index
         into memory and have to notice when something underneath them was deleted."""

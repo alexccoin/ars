@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ars_core import VoiceConfig
-from ars_protocol import FRAME_MS, SAMPLE_RATE_HZ, AudioFormat, Language
+from ars_protocol import SUPPORTED_LANGUAGES, FRAME_MS, SAMPLE_RATE_HZ, AudioFormat, Language
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -218,7 +218,7 @@ class VoicePipelineConfig(BaseSettings):
     matters more than first-turn latency (a test, or a CLI that exits immediately)."""
 
     fixtures_dir: Path = Path("./data/fixtures")
-    languages: tuple[Language, ...] = (Language.EN, Language.RO)
+    languages: tuple[Language, ...] = SUPPORTED_LANGUAGES
 
     @property
     def audio_format(self) -> AudioFormat:

@@ -1398,8 +1398,13 @@ export class ArsEntity {
       mount.appendChild(this.canvas);
       this.host = mount;
     }
-    this.canvas.setAttribute('role', 'img');
-    this.canvas.setAttribute('aria-label', 'A.R.S — idle');
+    /* Decorative to assistive tech, deliberately. The state is already
+       announced by the localised state pip (role="status") in the header;
+       a second, English-only "A.R.S - thinking" from the canvas would be both
+       duplicate noise and a monolingual string in a bilingual product. The
+       state is exposed as data-state for CSS and for tests. */
+    this.canvas.setAttribute('aria-hidden', 'true');
+    this.canvas.dataset.state = 'idle';
 
     this.theme = readTheme(document.documentElement);
     this.model = new Model(this.theme);
@@ -1486,7 +1491,7 @@ export class ArsEntity {
   setState(state) {
     if (this.destroyed) return;
     this.model.setState(state);
-    this.canvas.setAttribute('aria-label', `A.R.S — ${this.model.state}`);
+    this.canvas.dataset.state = this.model.state;
     this._kick();
   }
 

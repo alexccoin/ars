@@ -131,3 +131,75 @@ signal = "routing.local_only"
 lang = "any"
 strength = 0.45
 regex = "\\b(don'?t use the cloud|keep it local|stay local|local only|nu folosi cloud|[țt]ine totul local|doar local)\\b"
+
+[[pattern]]
+signal = "style.shorter"
+lang = "de"
+strength = 0.35
+regex = "\\b(k[üu]rzer|zu lang|kurz fassen|fass dich kurz|knapper|weniger text|komm zum punkt)\\b"
+
+[[pattern]]
+signal = "style.more_detail"
+lang = "de"
+strength = 0.35
+regex = "\\b(mehr details|ausf[üu]hrlicher|erkl[äa]r.{0,12}mehr|zu kurz|genauer)\\b"
+
+[[pattern]]
+signal = "style.less_formal"
+lang = "de"
+strength = 0.35
+regex = "\\b(nicht so f[öo]rmlich|entspannter|red normal|locker|weniger h[öo]flichkeitsfloskeln|sag du zu mir)\\b"
+
+[[pattern]]
+signal = "language.prefer_ro"
+lang = "de"
+strength = 0.35
+regex = "\\b(antworte.{0,15}rum[äa]nisch|auf rum[äa]nisch)\\b"
+
+[[pattern]]
+signal = "language.prefer_en"
+lang = "de"
+strength = 0.35
+regex = "\\b(antworte.{0,15}englisch|auf englisch)\\b"
+
+[[pattern]]
+signal = "language.keep_ro_with_english_terms"
+lang = "de"
+strength = 0.35
+regex = "\\b(bleib.{0,15}(?:deutsch|rum[äa]nisch)|wechsel nicht.{0,15}englisch)\\b"
+
+[[pattern]]
+signal = "proactivity.less"
+lang = "de"
+strength = 0.35
+regex = "\\b(unterbrich mich nicht|st[öo]r mich nicht|sag mir nur wenn|lass mich in ruhe)\\b"
+
+[[pattern]]
+signal = "proactivity.more"
+lang = "de"
+strength = 0.35
+regex = "\\b(sag mir bescheid|erinnere mich|warn mich|melde dich)\\b"
+
+[[pattern]]
+signal = "confirmation.always_ask"
+lang = "de"
+strength = 0.4
+regex = "\\b(frag mich erst|frag mich immer|hol dir mein ok|best[äa]tige mit mir|nicht.{0,20}ohne mich zu fragen)\\b"
+
+[[pattern]]
+signal = "confirmation.act_without_asking"
+lang = "de"
+strength = 0.4
+regex = "\\b(mach.{0,10}einfach|frag nicht jedes mal|du musst nicht fragen|leg einfach los)\\b"
+
+[[pattern]]
+signal = "schedule.quiet_hours"
+lang = "de"
+strength = 0.4
+regex = "\\bnicht.{0,25}nach\\s+(\\d{1,2}(?::\\d{2})?)\\s*(?:uhr)?"
+
+[[pattern]]
+signal = "routing.local_only"
+lang = "de"
+strength = 0.4
+regex = "\\b(nichts in die cloud|nur lokal|bleib auf dem rechner|keine cloud)\\b"

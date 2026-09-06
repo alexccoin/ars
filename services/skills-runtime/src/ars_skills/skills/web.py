@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from ars_protocol import (
+    SUPPORTED_LANGUAGES,
     Capability,
     Language,
     Provenance,
@@ -109,7 +110,7 @@ class WebSkill(Skill):
             description="Search the web and read the contents of a page.",
             runtime=RT.PYTHON_INPROC,
             trusted=True,
-            languages=(Language.EN, Language.RO),
+            languages=SUPPORTED_LANGUAGES,
             capabilities=(Capability.WEB_SEARCH, Capability.WEB_FETCH),
             network_allowlist=self._allowlist,
             tools=(
