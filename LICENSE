@@ -1,0 +1,43 @@
+A.R.S — Autonomous Reasoning System
+
+Copyright (c) 2026 Alexandru Stratulat <alex.ccoin@gmail.com>
+https://github.com/alexccoin/ars
+
+All rights reserved.
+
+This software and its source code are the property of Alexandru Stratulat. They are
+published for reference and for the author's own use across the author's own devices.
+
+Permission is NOT granted to any other person or organisation to use, copy, modify,
+merge, publish, distribute, sublicense, or sell copies of this software, in whole or in
+part, without the prior written permission of the copyright holder.
+
+You may view this source code, and you may fork it on GitHub for the purpose of
+proposing changes back to it. Nothing here grants a licence to run it as your own
+product, to redistribute it, or to use it as training data.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+A.R.S runs third-party models and libraries that carry their own licences, which are NOT
+covered by the terms above and which bind anyone who runs this software:
+
+  Whisper large-v3-turbo (ASR)          MIT — OpenAI, via mlx-community
+  Piper voices (TTS)                    per-voice; most CC BY 4.0 or MIT — see
+                                        huggingface.co/rhasspy/piper-voices
+  Silero VAD                            MIT
+  openWakeWord                          Apache-2.0
+  Qwen3 (local reasoning, via Ollama)   Apache-2.0
+  sentence-transformers / e5 models     MIT (multilingual-e5-small: MIT)
+  FastAPI, pydantic, numpy, and the rest of the Python dependency tree: see each
+  project's own licence.
+
+Model weights are never committed to this repository (see .gitignore and CLAUDE.md
+non-negotiable #8); they are fetched at setup time by scripts/fetch_voice_models.sh,
+directly from their publishers and under their publishers' terms.

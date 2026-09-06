@@ -3,6 +3,8 @@ name = "ars-auth"
 version = "0.1.0"
 description = "A.R.S auth — the guard, grants, consent, OAuth token vault and audit log"
 requires-python = ">=3.11"
+authors = [{ name = "Alexandru Stratulat", email = "alex.ccoin@gmail.com" }]
+license = { file = "../../LICENSE" }
 dependencies = [
     "ars-protocol",
     "ars-core",

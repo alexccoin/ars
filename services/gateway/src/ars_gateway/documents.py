@@ -15,6 +15,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from ars_compute.language import detect_matrix_language
 from ars_protocol import (
     Language, MemoryKind, MemoryRecord, Provenance, Sensitivity, SourceKind, TrustLevel,
     new_id,
@@ -150,15 +151,16 @@ def chunk(text: str, *, size: int = CHUNK_CHARS, overlap: int = CHUNK_OVERLAP) -
 
 
 def detect_language(text: str) -> Language:
-    """Cheap and good enough to tag a chunk. Romanian diacritics and a handful of very
-    common function words separate the two decisively; no model needed for a label."""
-    sample = text[:4000].lower()
-    ro_marks = sum(sample.count(ch) for ch in "ăâîșțşţ")
-    ro_words = sum(sample.count(f" {w} ") for w in
-                   ("și", "este", "sunt", "pentru", "care", "din", "cu", "nu", "să", "la"))
-    en_words = sum(sample.count(f" {w} ") for w in
-                   ("the", "and", "is", "are", "for", "which", "from", "with", "not", "to"))
-    return Language.RO if (ro_marks * 3 + ro_words) > en_words else Language.EN
+    """Tag a document with the language it is written in.
+
+    This used to be a second, simpler detector living here — diacritic counting and ten
+    function words per language. It was a duplicate of the one `services/compute` already
+    had, and the two disagreed the moment a third language arrived: this one had no
+    concept of German at all and would have labelled every German lease as English,
+    filing it under a language nobody would ever match it against. One detector, tested
+    in one place.
+    """
+    return detect_matrix_language(text[:4000]).language
 
 
 CATALOGUE_PREFIX = "document:"

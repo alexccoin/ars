@@ -36,6 +36,15 @@ DEFAULT_HESITATION_RO: tuple[str, ...] = (
     "aa", "ăă", "ăăă", "păi", "pai", "deci", "si", "și", "dar", "sau", "că", "ca", "cu",
     "la", "de", "pe", "un", "o", "în", "in", "adică", "adica", "sa", "să", "mai",
 )
+DEFAULT_HESITATION_DE: tuple[str, ...] = (
+    "äh", "ähm", "ah", "ahm", "hm", "also", "und", "aber", "oder", "weil", "dass",
+    "der", "die", "das", "den", "dem", "ein", "eine", "einen", "mit", "für", "fur",
+    "von", "zu", "auf", "in", "im", "so", "halt", "eben", "mein", "meine", "dein",
+)
+"""German hesitates differently and, more importantly, ends clauses on articles and
+prepositions the way Romanian does — "ich hätte gern den…" is mid-sentence, not a finished
+utterance. Without this a German speaker is cut off exactly where they pause to choose a
+noun, which German grammar invites more often than English does."""
 
 
 class EndpointState(StrEnum):
@@ -99,6 +108,7 @@ class Endpointer:
     confident_silence_ms: float = 420.0
     hesitation_en: tuple[str, ...] = DEFAULT_HESITATION_EN
     hesitation_ro: tuple[str, ...] = DEFAULT_HESITATION_RO
+    hesitation_de: tuple[str, ...] = DEFAULT_HESITATION_DE
 
     state: EndpointState = field(default=EndpointState.IDLE, init=False)
     speech_ms: float = field(default=0.0, init=False)
@@ -250,15 +260,17 @@ class Endpointer:
         tokens = self._tokens()
         if not tokens:
             return False
-        vocabulary = (
-            self.hesitation_ro if self._partial_language is Language.RO else self.hesitation_en
-        )
-        # Check both vocabularies for the RO case: Romanian speakers code-switch "and"/"si"
-        # freely, and a missed filler costs a truncation.
-        both = set(vocabulary)
-        if self._partial_language is Language.RO:
-            both |= set(self.hesitation_ro)
-        return tokens[-1] in both
+        by_language = {
+            Language.EN: self.hesitation_en,
+            Language.RO: self.hesitation_ro,
+            Language.DE: self.hesitation_de,
+        }
+        # English is always included alongside the speaker's language: Romanian and German
+        # speakers code-switch "and"/"so"/"okay" freely mid-sentence, and a missed filler
+        # costs a truncation — the expensive direction of this error.
+        vocabulary = set(by_language.get(self._partial_language, self.hesitation_en))
+        vocabulary |= set(self.hesitation_en)
+        return tokens[-1] in vocabulary
 
     def _step(
         self,

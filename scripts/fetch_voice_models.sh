@@ -25,6 +25,7 @@ ASR_BACKEND="${ARS_ASR_BACKEND:-auto}"   # auto -> mlx-whisper on arm64 macOS
 WAKEWORD="${ARS_WAKEWORD:-hey_ars}"
 TTS_VOICE_EN="${ARS_TTS_VOICE_EN:-en_US-amy-medium}"
 TTS_VOICE_RO="${ARS_TTS_VOICE_RO:-ro_RO-mihai-medium}"
+TTS_VOICE_DE="${ARS_TTS_VOICE_DE:-de_DE-thorsten-medium}"
 
 PIPER_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main"
 SILERO_URL="https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx"
@@ -150,7 +151,7 @@ fetch_tts() {
   log "piper voices -> $MODELS_DIR/tts"
   mkdir -p "$MODELS_DIR/tts"
   # Piper's layout is <lang_family>/<lang_REGION>/<name>/<quality>/<file>.
-  for voice in "$TTS_VOICE_EN" "$TTS_VOICE_RO"; do
+  for voice in "$TTS_VOICE_EN" "$TTS_VOICE_RO" "$TTS_VOICE_DE"; do
     local locale name quality family
     locale="${voice%%-*}"                 # en_US
     name="${voice#*-}"; name="${name%-*}" # amy
@@ -161,8 +162,9 @@ fetch_tts() {
             "$MODELS_DIR/tts/$voice$suffix"
     done
   done
-  log "Romanian voice: $TTS_VOICE_RO — listen to it before shipping. A bilingual assistant"
-  log "whose Romanian half sounds wrong is not bilingual in any sense the user cares about."
+  log "Non-English voices: $TTS_VOICE_RO, $TTS_VOICE_DE — listen to them before shipping."
+  log "A multilingual assistant whose other halves sound wrong is not multilingual in any"
+  log "sense the user cares about."
 }
 
 # ---------------------------------------------------------------------------- VAD

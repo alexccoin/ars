@@ -62,6 +62,32 @@ can could will would shall should may might must
 not no yes please thanks thank sorry
 """.split())
 
+DE_FUNCTION_WORDS: frozenset[str] = frozenset("""
+der die das den dem des ein eine einen einem einer eines
+und oder aber wenn dann als dass weil damit obwohl
+ist sind war waren bin bist seid sein gewesen
+habe hast hat haben hatte hatten wird werden wurde wurden worden
+ich du er sie es wir ihr mich dich sich uns euch mir dir ihm ihnen
+mein dein sein unser euer ihre seine meine deine
+nicht kein keine nichts nie immer schon noch auch nur sehr mehr wenig viel
+von zu mit fur auf aus bei nach uber unter vor hinter zwischen ohne gegen um
+was wann wo warum wie welche welcher welches wer wem wen
+kann kannst konnen konnte soll sollen musst mussen darf durfen mochte mochten will wollen
+bitte danke entschuldigung hallo guten morgen tag abend tschuss
+""".split())
+"""Folded to ASCII, matching `_fold`: `für` is looked up as `fur`, `über` as `uber`.
+
+The overlap with English is real and deliberate — `die`, `war`, `man`, `so`, `in`, `will`,
+`hat` are words in both — which is why an English hit is not counted when the same folded
+form is also a German or Romanian function word. A word that means something in two
+languages is evidence for neither."""
+
+DE_DIACRITICS = "äöüßÄÖÜ"
+_DE_DIACRITIC_RE = re.compile(f"[{DE_DIACRITICS}]")
+"""Unlike Romanian's, these do not overlap: ä, ö, ü and ß appear in German and in neither
+of the other two languages A.R.S speaks, so one of them is as decisive as a Romanian
+enclitic."""
+
 TECHNICAL_BORROWINGS: frozenset[str] = frozenset("""
 api backend frontend endpoint endpoints server servers client clients database db
 query queries cache caching log logs logging debug bug bugs fix patch hotfix
@@ -119,24 +145,40 @@ class MatrixEvidence:
     language: Language
     ro_score: float
     en_score: float
-    ro_hits: tuple[str, ...]
-    en_hits: tuple[str, ...]
-    borrowings: tuple[str, ...]
-    has_diacritics: bool
-    enclitics: tuple[str, ...]
+    de_score: float = 0.0
+    ro_hits: tuple[str, ...] = ()
+    en_hits: tuple[str, ...] = ()
+    de_hits: tuple[str, ...] = ()
+    borrowings: tuple[str, ...] = ()
+    has_diacritics: bool = False
+    has_de_diacritics: bool = False
+    enclitics: tuple[str, ...] = ()
+
+    @property
+    def scores(self) -> dict[Language, float]:
+        return {
+            Language.RO: self.ro_score,
+            Language.EN: self.en_score,
+            Language.DE: self.de_score,
+        }
 
     @property
     def margin(self) -> float:
-        return abs(self.ro_score - self.en_score)
+        """How far ahead the winner is of the best rival — not RO minus EN. With three
+        languages those are different numbers, and the second one is the one that says
+        whether we actually know."""
+        ranked = sorted(self.scores.values(), reverse=True)
+        return ranked[0] - ranked[1]
 
     @property
     def decisive(self) -> bool:
-        """High enough to overrule an ASR label. Diacritics or Romanian enclitic
-        morphology are on their own sufficient; otherwise we want a clear function-word
-        margin, not a coin flip."""
-        if self.has_diacritics or self.enclitics:
+        """High enough to overrule an ASR label. A Romanian diacritic or enclitic, or a
+        German umlaut/ß, is on its own sufficient — no other language A.R.S speaks
+        produces those characters. Otherwise we want a clear function-word margin, not a
+        coin flip."""
+        if self.has_diacritics or self.enclitics or self.has_de_diacritics:
             return True
-        return self.margin >= 2.0 and max(self.ro_score, self.en_score) >= 3.0
+        return self.margin >= 2.0 and max(self.scores.values()) >= 3.0
 
     @property
     def code_switched(self) -> bool:
@@ -158,35 +200,48 @@ def detect_matrix_language(text: str) -> MatrixEvidence:
 
     Scoring, in order of weight:
       * a Romanian diacritic anywhere      -> +3.0 Romanian (nothing else produces these)
+      * a German umlaut or ß anywhere      -> +3.0 German   (likewise)
       * a Romanian enclitic on any stem    -> +2.5 Romanian each (max 3 counted)
-      * a Romanian function word           -> +1.0 each
-      * an English function word           -> +1.0 each
-      * a technical borrowing              -> 0. Ignored entirely, in both directions.
+      * a function word                    -> +1.0 to its language
+      * a technical borrowing              -> 0. Ignored entirely, in every direction.
+
+    A word that is a function word in more than one of the three languages scores for
+    none of them. `die`, `war`, `man`, `in` and `so` are all real words in both English
+    and German, and counting them for both would make every German sentence look bilingual
+    — the shared vocabulary is noise, not evidence.
     """
     words = [w for w in _WORD_RE.findall(text)]
     folded = [_fold(w) for w in words]
 
+    def hits(vocabulary: frozenset[str], *rivals: frozenset[str]) -> tuple[str, ...]:
+        return tuple(
+            w for w, f in zip(words, folded, strict=True)
+            if f in vocabulary
+            and f not in TECHNICAL_BORROWINGS
+            and not any(f in rival for rival in rivals)
+        )
+
     borrowings = tuple(w for w, f in zip(words, folded, strict=True) if f in TECHNICAL_BORROWINGS)
-    ro_hits = tuple(
-        w for w, f in zip(words, folded, strict=True)
-        if f in RO_FUNCTION_WORDS and f not in TECHNICAL_BORROWINGS
-    )
-    en_hits = tuple(
-        w for w, f in zip(words, folded, strict=True)
-        if f in EN_FUNCTION_WORDS and f not in TECHNICAL_BORROWINGS and f not in RO_FUNCTION_WORDS
-    )
+    ro_hits = hits(RO_FUNCTION_WORDS, DE_FUNCTION_WORDS)
+    en_hits = hits(EN_FUNCTION_WORDS, RO_FUNCTION_WORDS, DE_FUNCTION_WORDS)
+    de_hits = hits(DE_FUNCTION_WORDS, RO_FUNCTION_WORDS)
     enclitics = tuple(m.group(0) for m in _RO_ENCLITIC_RE.finditer(text))[:3]
     has_diacritics = bool(_RO_DIACRITIC_RE.search(text))
+    has_de_diacritics = bool(_DE_DIACRITIC_RE.search(text))
 
     ro_score = float(len(ro_hits)) + (3.0 if has_diacritics else 0.0) + 2.5 * len(enclitics)
     en_score = float(len(en_hits))
+    de_score = float(len(de_hits)) + (3.0 if has_de_diacritics else 0.0)
 
     # Ties go to English only because DEFAULT_LANGUAGE is English; a tie means we have no
-    # evidence, and in that state the transcript label is what actually decides.
-    language = Language.RO if ro_score > en_score else Language.EN
+    # evidence, and in that state the transcript label is what actually decides. English is
+    # therefore listed first, so `max` keeps it on an exact tie.
+    scores = {Language.EN: en_score, Language.RO: ro_score, Language.DE: de_score}
+    language = max(scores, key=lambda lang: scores[lang])
     return MatrixEvidence(
-        language=language, ro_score=ro_score, en_score=en_score, ro_hits=ro_hits,
-        en_hits=en_hits, borrowings=borrowings, has_diacritics=has_diacritics,
+        language=language, ro_score=ro_score, en_score=en_score, de_score=de_score,
+        ro_hits=ro_hits, en_hits=en_hits, de_hits=de_hits, borrowings=borrowings,
+        has_diacritics=has_diacritics, has_de_diacritics=has_de_diacritics,
         enclitics=enclitics,
     )
 
@@ -417,6 +472,8 @@ class DiacriticRepairStream:
 __all__ = [
     "AMBIGUOUS_ASCII",
     "ASR_TRUST_FLOOR",
+    "DE_DIACRITICS",
+    "DE_FUNCTION_WORDS",
     "DIACRITIC_REPAIRS",
     "RO_DIACRITICS",
     "TECHNICAL_BORROWINGS",

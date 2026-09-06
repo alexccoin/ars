@@ -3,6 +3,8 @@ name = "ars-workspace"
 version = "0.1.0"
 description = "A.R.S — a private, local-first voice and compute assistant"
 requires-python = ">=3.11"
+authors = [{ name = "Alexandru Stratulat", email = "alex.ccoin@gmail.com" }]
+license = { file = "LICENSE" }
 
 [tool.uv.workspace]
 members = ["packages/protocol", "packages/core", "packages/telemetry", "services/*"]

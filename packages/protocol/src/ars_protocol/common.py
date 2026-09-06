@@ -41,14 +41,17 @@ class Language(StrEnum):
 
     EN = "en"
     RO = "ro"
+    DE = "de"
 
     @property
     def display_name(self) -> str:
-        return {Language.EN: "English", Language.RO: "Română"}[self]
+        """The language's name in itself. A picker that says "German" to a German speaker
+        is a picker written by someone who was not thinking about them."""
+        return {Language.EN: "English", Language.RO: "Română", Language.DE: "Deutsch"}[self]
 
 
 DEFAULT_LANGUAGE = Language.EN
-SUPPORTED_LANGUAGES: tuple[Language, ...] = (Language.EN, Language.RO)
+SUPPORTED_LANGUAGES: tuple[Language, ...] = (Language.EN, Language.RO, Language.DE)
 
 SessionId = Annotated[str, Field(pattern=r"^ses_[a-f0-9]{20}$")]
 TurnId = Annotated[str, Field(pattern=r"^trn_[a-f0-9]{20}$")]

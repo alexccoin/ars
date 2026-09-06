@@ -130,6 +130,7 @@ def build_tts(config: VoicePipelineConfig) -> TtsEngine:
             return PiperTtsEngine(
                 voice_en=config.core.tts_voice_en,
                 voice_ro=config.core.tts_voice_ro,
+                voice_de=config.core.tts_voice_de,
                 model_dir=cfg.model_dir,
                 chunk_ms=cfg.chunk_ms,
                 first_sentence_max_chars=cfg.first_sentence_max_chars,
@@ -139,6 +140,7 @@ def build_tts(config: VoicePipelineConfig) -> TtsEngine:
                 chunk_ms=cfg.chunk_ms,
                 voice_en=config.core.tts_voice_en,
                 voice_ro=config.core.tts_voice_ro,
+                voice_de=config.core.tts_voice_de,
                 first_sentence_max_chars=cfg.first_sentence_max_chars,
             )
         case "null":

@@ -41,3 +41,20 @@ email = [
 files = [
   "Mă uit prin fișiere.",
 ]
+
+[de]
+generic = [
+  "Einen Moment.",
+  "Ich schaue nach.",
+  "Kurz, bitte.",
+]
+web = [
+  "Ich suche das gerade.",
+  "Ich schaue im Netz nach.",
+]
+email = [
+  "Ich sehe in deiner Mail nach.",
+]
+files = [
+  "Ich sehe in den Dateien nach.",
+]

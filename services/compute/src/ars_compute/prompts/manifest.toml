@@ -82,3 +82,60 @@ id = "tool_use"
 version = "v1"
 language = "ro"
 path = "tool_use.ro.v1.md"
+
+# --- German -------------------------------------------------------------------------
+# Added when German became a third language. The per-language files are new bytes, not
+# edits: v1 of every asset is exactly what it always was, so an eval recorded against
+# system/v1/en still resolves to the same text and the same hash.
+
+[[asset]]
+id = "quarantine"
+version = "v1"
+language = "de"
+path = "quarantine.de.v1.md"
+
+[[asset]]
+id = "quarantine_flag"
+version = "v1"
+language = "de"
+path = "quarantine_flag.de.v1.md"
+
+[[asset]]
+id = "memory_frame"
+version = "v1"
+language = "de"
+path = "memory_frame.de.v1.md"
+
+[[asset]]
+id = "preferences_frame"
+version = "v1"
+language = "de"
+path = "preferences_frame.de.v1.md"
+
+[[asset]]
+id = "tool_use"
+version = "v1"
+language = "de"
+path = "tool_use.de.v1.md"
+
+# The system prompt is the one asset whose EXISTING text went stale: it enumerated the
+# languages A.R.S speaks, and that sentence became wrong. Editing v1 in place is
+# forbidden, so v1 stays untouched and v2 supersedes it in all three languages.
+
+[[asset]]
+id = "system"
+version = "v2"
+language = "en"
+path = "system.en.v2.md"
+
+[[asset]]
+id = "system"
+version = "v2"
+language = "ro"
+path = "system.ro.v2.md"
+
+[[asset]]
+id = "system"
+version = "v2"
+language = "de"
+path = "system.de.v2.md"

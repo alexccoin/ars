@@ -36,6 +36,7 @@ class VoiceConfig(BaseSettings):
     mid-thought, which is worse than waiting. Tune against fixtures, never by feel."""
     tts_voice_en: str = "en_US-amy-medium"
     tts_voice_ro: str = "ro_RO-mihai-medium"
+    tts_voice_de: str = "de_DE-thorsten-medium"
 
 
 def default_asr_backend() -> str:

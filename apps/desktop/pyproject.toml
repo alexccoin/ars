@@ -3,6 +3,8 @@ name = "ars-desktop"
 version = "0.1.0"
 description = "A.R.S desktop shell — native macOS window over the local gateway"
 requires-python = ">=3.12"
+authors = [{ name = "Alexandru Stratulat", email = "alex.ccoin@gmail.com" }]
+license = { file = "../../LICENSE" }
 dependencies = [
     "ars-gateway",
     "pywebview>=6.2,<7",

@@ -3,6 +3,8 @@ name = "ars-voice"
 version = "0.1.0"
 description = "A.R.S voice pipeline — wakeword, VAD/endpointing, ASR, TTS (EN + RO)"
 requires-python = ">=3.11"
+authors = [{ name = "Alexandru Stratulat", email = "alex.ccoin@gmail.com" }]
+license = { file = "../../LICENSE" }
 dependencies = [
     "ars-protocol",
     "ars-core",

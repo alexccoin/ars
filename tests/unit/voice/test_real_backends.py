@@ -16,7 +16,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
-from ars_protocol import Language, SynthesisRequest
+from ars_protocol import SUPPORTED_LANGUAGES, Language, SynthesisRequest
 from ars_voice.audio.frames import frames_from_pcm
 from ars_voice.audio.sources import frames_from_iterable, read_wav
 from ars_voice.config import VoicePipelineConfig
@@ -168,18 +168,19 @@ async def test_partials_are_skipped_while_the_user_is_silent(mlx_engine):
 # --------------------------------------------------------------------------- TTS
 
 @needs_piper
-async def test_piper_warm_up_covers_both_voices_and_meets_the_budget_afterwards():
+async def test_piper_warm_up_covers_every_voice_and_meets_the_budget_afterwards():
     """Cold, a Piper voice load is ~355 ms against a 120 ms budget — and it is per voice, so
-    a bilingual household would miss the budget twice without this."""
+    a multilingual household would miss the budget once per language without this."""
     from ars_voice.tts.piper import PiperTtsEngine
 
     engine = PiperTtsEngine(model_dir=ROOT / "models" / "tts")
     timings = await engine.warm_up()
-    assert set(timings) == {Language.EN, Language.RO}
+    assert set(timings) == set(SUPPORTED_LANGUAGES)
 
     for language, text in (
         (Language.EN, "Good morning. I found three new messages."),
         (Language.RO, "Bună dimineața. Am găsit trei mesaje noi."),
+        (Language.DE, "Guten Morgen. Ich habe drei neue Nachrichten."),
     ):
         start = LatencyRecorder.mark()
         first = None

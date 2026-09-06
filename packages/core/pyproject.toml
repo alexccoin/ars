@@ -3,6 +3,8 @@ name = "ars-core"
 version = "0.1.0"
 description = "A.R.S engine interfaces and configuration — the seams every backend plugs into"
 requires-python = ">=3.11"
+authors = [{ name = "Alexandru Stratulat", email = "alex.ccoin@gmail.com" }]
+license = { file = "../../LICENSE" }
 dependencies = ["ars-protocol", "pydantic>=2.9", "pydantic-settings>=2.6"]
 
 [build-system]

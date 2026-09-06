@@ -202,7 +202,66 @@ _RO: dict[Msg, str] = {
         "Nu. Politica nu îmi permite să {capability}, pentru {resource}.",
 }
 
-TEMPLATES: dict[Language, dict[Msg, str]] = {Language.EN: _EN, Language.RO: _RO}
+_DE: dict[Msg, str] = {
+    Msg.ALLOW_SILENT:
+        "Erlaubt: {capability}, für {resource}.",
+    Msg.ALLOW_SESSION_CONFIRMED:
+        "Erlaubt: {capability}, für {resource} - du hast das vorhin in dieser Sitzung "
+        "genehmigt.",
+
+    Msg.ASK_FIRST_USE:
+        "Dafür brauche ich deine Erlaubnis: {capability}, für {resource}. {summary} Darf ich?",
+    Msg.ASK_EVERY_USE:
+        "Du wolltest jedes Mal gefragt werden: {capability}, für {resource}. "
+        "{summary} Darf ich?",
+    Msg.ASK_ONCE_PER_SESSION:
+        "Zum ersten Mal in dieser Sitzung: {capability}, für {resource}. {summary} "
+        "Darf ich, für den Rest dieses Gesprächs?",
+    Msg.ASK_TAINTED_EGRESS:
+        "Vorsicht - ein Teil dieses Zuges stammt von {source} ({origin}), und dabei würde "
+        "Text deinen Rechner verlassen. Lies, was gesendet würde: {resource}. Text von "
+        "außen darf nicht entscheiden, was von hier weggeht. Soll ich senden?",
+
+    Msg.ASK_TAINTED:
+        "Vorsicht - ein Teil dieses Zuges stammt von {source} ({origin}). Text von außen "
+        "behandle ich als Daten, niemals als Anweisung, deshalb tue ich das nicht auf "
+        "sein Geheiß. Willst du, dass ich {capability}, für {resource}?",
+
+    Msg.DENY_GUARD_DISABLED:
+        "Nein. Der Guard ist ausgeschaltet, also habe ich keinen Zugriff auf irgendetwas "
+        "Privates und kann nichts in der Welt verändern - auch nichts, wobei ich "
+        "{capability}. Schalte den Guard wieder ein, um das zu nutzen.",
+    Msg.DENY_NO_GRANT:
+        "Nein. Du hast mir nicht erlaubt, {capability}, und darum bitte ich nicht mitten "
+        "in einer Aufgabe. Erteile die Erlaubnis vorher bewusst in den Einstellungen.",
+    Msg.DENY_GRANT_EXPIRED:
+        "Nein. Deine Erlaubnis, {capability}, ist abgelaufen. Du kannst sie in den "
+        "Einstellungen erneuern - von mir aus verlängere ich sie nicht.",
+    Msg.DENY_GRANT_REVOKED:
+        "Nein. Du hast mir die Erlaubnis entzogen, {capability}. Ich werde dich mitten in "
+        "einer Aufgabe nicht darum bitten; erteile sie in den Einstellungen, wenn du es "
+        "dir anders überlegt hast.",
+    Msg.DENY_RESOURCE_OUT_OF_SCOPE:
+        "Nein. Du hast mir erlaubt, {capability}, aber nur für {scope} - und das hier ist "
+        "{resource}. Ich dehne eine Erlaubnis nicht auf etwas aus, das du nicht gemeint "
+        "hast.",
+    Msg.DENY_TAINTED_CRITICAL:
+        "Nein. In diesem Zug wurde Text von {source} ({origin}) verwendet, und ich werde "
+        "niemals {capability}, weil ein Text von außen es vorgeschlagen hat. Wenn du das "
+        "willst, sage es mir selbst, in einem neuen Zug.",
+    Msg.DENY_RATE_LIMITED_TURN:
+        "Nein. Das sind {limit} Versuche, {capability}, in einem einzigen Zug - da läuft "
+        "etwas im Kreis. Ich höre hier auf.",
+    Msg.DENY_RATE_LIMITED_SESSION:
+        "Nein. Ich habe in diesem Gespräch schon {limit} Mal versucht, {capability}. Ich "
+        "höre auf, bis du ein neues beginnst.",
+    Msg.DENY_POLICY:
+        "Nein. Die Richtlinie erlaubt mir nicht, {capability}, für {resource}.",
+}
+
+TEMPLATES: dict[Language, dict[Msg, str]] = {
+    Language.EN: _EN, Language.RO: _RO, Language.DE: _DE,
+}
 
 
 # --------------------------------------------------------------------- capability names
@@ -252,6 +311,26 @@ CAPABILITY_NAMES: dict[Language, dict[Capability, str]] = {
         Capability.MEMORY_READ: "citesc ce îmi amintesc despre tine",
         Capability.MEMORY_WRITE: "salvez ceva în ce îmi amintesc despre tine",
     },
+    Language.DE: {
+        Capability.WEB_SEARCH: "im Netz suchen",
+        Capability.WEB_FETCH: "eine Webseite öffnen",
+        Capability.GITHUB_READ_PUBLIC: "ein öffentliches GitHub-Repository lesen",
+        Capability.EMAIL_READ: "deine E-Mails lesen",
+        Capability.EMAIL_SEARCH: "deine E-Mails durchsuchen",
+        Capability.CALENDAR_READ: "deinen Kalender lesen",
+        Capability.CONTACTS_READ: "deine Kontakte lesen",
+        Capability.GITHUB_READ_PRIVATE: "deine privaten GitHub-Repositories lesen",
+        Capability.FILES_READ: "deine Dateien lesen",
+        Capability.EMAIL_SEND: "in deinem Namen eine E-Mail senden",
+        Capability.CALENDAR_WRITE: "deinen Kalender ändern",
+        Capability.FILES_WRITE: "in deine Dateien schreiben",
+        Capability.GITHUB_WRITE: "in deinem Namen auf GitHub schreiben",
+        Capability.APP_CONTROL: "Apps auf diesem Gerät steuern",
+        Capability.SHELL_EXEC: "Befehle auf diesem Rechner ausführen",
+        Capability.NETWORK_EGRESS: "Daten über das Netz nach außen senden",
+        Capability.MEMORY_READ: "lesen, was ich über dich weiß",
+        Capability.MEMORY_WRITE: "etwas zu dem speichern, was ich über dich weiß",
+    },
 }
 
 SOURCE_NAMES: dict[Language, dict[SourceKind, str]] = {
@@ -279,21 +358,36 @@ SOURCE_NAMES: dict[Language, dict[SourceKind, str]] = {
         SourceKind.GITHUB: "GitHub",
         SourceKind.SKILL_OUTPUT: "rezultatul unei unelte",
     },
+    Language.DE: {
+        SourceKind.MICROPHONE: "dem Mikrofon",
+        SourceKind.KEYBOARD: "der Tastatur dieses Geräts",
+        SourceKind.SYSTEM_PROMPT: "meinen eigenen Anweisungen",
+        SourceKind.MEMORY: "meinem Gedächtnis",
+        SourceKind.LOCAL_FILE: "einer Datei auf diesem Rechner",
+        SourceKind.EMAIL: "einer E-Mail",
+        SourceKind.WEB_PAGE: "einer Webseite",
+        SourceKind.WEB_SEARCH_RESULT: "einem Web-Suchergebnis",
+        SourceKind.GITHUB: "GitHub",
+        SourceKind.SKILL_OUTPUT: "der Ausgabe eines Werkzeugs",
+    },
 }
 
 _ANY_RESOURCE: dict[Language, str] = {
     Language.EN: "everything it covers",
     Language.RO: "tot ce acoperă",
+    Language.DE: "alles, was sie umfasst",
 }
 
 _UNKNOWN_ORIGIN: dict[Language, str] = {
     Language.EN: "origin not recorded",
     Language.RO: "origine neînregistrată",
+    Language.DE: "Herkunft nicht erfasst",
 }
 
 _UNKNOWN_SOURCE: dict[Language, str] = {
     Language.EN: "a source outside this conversation",
     Language.RO: "o sursă din afara acestei conversații",
+    Language.DE: "einer Quelle außerhalb dieses Gesprächs",
 }
 """Used when a turn is flagged tainted but carries no provenance. The guard still names
 the taint - "I do not know exactly where this came from" is itself information the user

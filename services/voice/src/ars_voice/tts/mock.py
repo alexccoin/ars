@@ -24,6 +24,13 @@ MS_PER_CHARACTER = 62.0
 unhurried conversational speech in both EN and RO."""
 
 
+_MOCK_F0_HZ: dict[Language, float] = {
+    Language.EN: 124.0, Language.RO: 112.0, Language.DE: 118.0,
+}
+"""Distinct per language so a test can tell the voices apart from the audio alone. The
+values are arbitrary; only their being different carries meaning."""
+
+
 class MockTtsEngine(TtsEngine):
     """Deterministic, cancellable, bilingual."""
 
@@ -37,13 +44,15 @@ class MockTtsEngine(TtsEngine):
         first_chunk_latency_ms: float = 15.0,
         voice_en: str = "mock_en",
         voice_ro: str = "mock_ro",
+        voice_de: str = "mock_de",
         first_sentence_max_chars: int = 140,
     ) -> None:
         self.chunk_ms = chunk_ms
         self.realtime_factor = max(realtime_factor, 0.01)
         self.first_chunk_latency_ms = first_chunk_latency_ms
-        self._voice_en = voice_en
-        self._voice_ro = voice_ro
+        self._voices_by_language = {
+            Language.EN: voice_en, Language.RO: voice_ro, Language.DE: voice_de,
+        }
         self.first_sentence_max_chars = first_sentence_max_chars
 
         self._cancelled = asyncio.Event()
@@ -57,7 +66,7 @@ class MockTtsEngine(TtsEngine):
         self.last_request: SynthesisRequest | None = None
 
     def voice_for(self, language: Language) -> str:
-        return self._voice_ro if language is Language.RO else self._voice_en
+        return self._voices_by_language[language]
 
     async def cancel(self) -> None:
         """Stops generation, not just playback. The synthesis loop checks this event before
@@ -114,7 +123,7 @@ class MockTtsEngine(TtsEngine):
         duration_ms = max(self.chunk_ms, len(sentence) * MS_PER_CHARACTER / request.speed)
         pcm = speech_like_pcm(
             duration_ms,
-            f0_hz=112.0 if request.language is Language.RO else 124.0,
+            f0_hz=_MOCK_F0_HZ[request.language],
             formants=formants_for(request.language.value),
             seed=abs(hash((sentence, request.language.value))) % 2**31,
         )

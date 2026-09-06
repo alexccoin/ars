@@ -22,6 +22,12 @@ from ..errors import PromptAssetMissing
 _DIR = Path(__file__).parent
 
 
+def _version_key(version: str) -> tuple[int, str]:
+    """Order "v2" after "v10" correctly, and never crash on an unconventional name."""
+    digits = "".join(c for c in version if c.isdigit())
+    return (int(digits) if digits else 0, version)
+
+
 @dataclass(frozen=True)
 class PromptAsset:
     id: str
@@ -47,16 +53,28 @@ class PromptLibrary:
     assets: tuple[PromptAsset, ...]
 
     def get(self, asset_id: str, language: Language | None = None,
-            version: str = "v1") -> PromptAsset:
-        for a in self.assets:
-            if a.id == asset_id and a.version == version and a.language == language:
-                return a
-        # Language-neutral assets are registered with language=None; fall back to those
-        # before failing, so a caller can ask for ("fillers", RO) and get the shared file.
-        for a in self.assets:
-            if a.id == asset_id and a.version == version and a.language is None:
-                return a
-        raise PromptAssetMissing(asset_id, language)
+            version: str | None = None) -> PromptAsset:
+        """The newest version of an asset, or a named one.
+
+        Versions are added as new files and never edited in place, so "newest" is the only
+        sensible default: a caller that wanted v1's exact bytes was recording an eval and
+        knows to ask for them by name. Resolving to the newest is what lets a prompt be
+        superseded — as `system` was when a third language made its opening sentence
+        wrong — without every call site learning the new number.
+        """
+        candidates = [
+            a for a in self.assets if a.id == asset_id and a.language == language
+        ] or [
+            # Language-neutral assets are registered with language=None; fall back to
+            # those before failing, so a caller can ask for ("fillers", RO) and get the
+            # shared file.
+            a for a in self.assets if a.id == asset_id and a.language is None
+        ]
+        if version is not None:
+            candidates = [a for a in candidates if a.version == version]
+        if not candidates:
+            raise PromptAssetMissing(asset_id, language)
+        return max(candidates, key=lambda a: _version_key(a.version))
 
     def refs(self) -> tuple[str, ...]:
         return tuple(sorted(a.ref for a in self.assets))

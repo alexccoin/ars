@@ -15,7 +15,7 @@ from ars_protocol import FRAME_MS, SAMPLE_RATE_HZ, AudioFormat, Language
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .vad.endpointing import DEFAULT_HESITATION_EN, DEFAULT_HESITATION_RO
+from .vad.endpointing import DEFAULT_HESITATION_DE, DEFAULT_HESITATION_EN, DEFAULT_HESITATION_RO
 
 
 class EndpointingConfig(BaseSettings):
@@ -60,13 +60,14 @@ class EndpointingConfig(BaseSettings):
 
     trailing_hesitation_tokens_en: tuple[str, ...] = DEFAULT_HESITATION_EN
     trailing_hesitation_tokens_ro: tuple[str, ...] = DEFAULT_HESITATION_RO
+    trailing_hesitation_tokens_de: tuple[str, ...] = DEFAULT_HESITATION_DE
 
     def hesitation_tokens(self, language: Language) -> tuple[str, ...]:
-        return (
-            self.trailing_hesitation_tokens_ro
-            if language is Language.RO
-            else self.trailing_hesitation_tokens_en
-        )
+        return {
+            Language.EN: self.trailing_hesitation_tokens_en,
+            Language.RO: self.trailing_hesitation_tokens_ro,
+            Language.DE: self.trailing_hesitation_tokens_de,
+        }[language]
 
 
 class VadConfig(BaseSettings):
@@ -225,4 +226,8 @@ class VoicePipelineConfig(BaseSettings):
         return AudioFormat()
 
     def voice_for(self, language: Language) -> str:
-        return self.core.tts_voice_ro if language is Language.RO else self.core.tts_voice_en
+        return {
+            Language.EN: self.core.tts_voice_en,
+            Language.RO: self.core.tts_voice_ro,
+            Language.DE: self.core.tts_voice_de,
+        }[language]

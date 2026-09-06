@@ -3,6 +3,8 @@ name = "ars-gateway"
 version = "0.1.0"
 description = "A.R.S front door — WebSocket turns, document ingestion, grants, and the UI"
 requires-python = ">=3.11"
+authors = [{ name = "Alexandru Stratulat", email = "alex.ccoin@gmail.com" }]
+license = { file = "../../LICENSE" }
 dependencies = [
     "ars-protocol", "ars-core", "ars-compute", "ars-memory", "ars-auth",
     "ars-skills-runtime", "ars-voice",

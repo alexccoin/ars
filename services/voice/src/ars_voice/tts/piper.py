@@ -44,6 +44,16 @@ from .segmentation import split_sentences
 log = logging.getLogger(__name__)
 
 
+_PRIMING_SENTENCE: dict[Language, str] = {
+    Language.EN: "Good morning. I found three new messages from the bank.",
+    Language.RO: "Bună dimineața. Am găsit trei mesaje noi de la bancă.",
+    Language.DE: "Guten Morgen. Ich habe drei neue Nachrichten von der Bank gefunden.",
+}
+"""One realistic sentence per voice, used to prime it. Same content in each language on
+purpose: priming cost tracks sentence length and phoneme variety, so a short German
+sentence here would make German look faster than it is."""
+
+
 class PiperTtsEngine(TtsEngine):
     """Local neural TTS, EN + RO."""
 
@@ -54,13 +64,17 @@ class PiperTtsEngine(TtsEngine):
         *,
         voice_en: str = "en_US-amy-medium",
         voice_ro: str = "ro_RO-mihai-medium",
+        voice_de: str = "de_DE-thorsten-medium",
         model_dir: Path | str = "./models/tts",
         chunk_ms: float = 120.0,
         first_sentence_max_chars: int = 140,
         length_scale: float | None = None,
     ) -> None:
-        self._voice_en = voice_en
-        self._voice_ro = voice_ro
+        # A dict, not a chain of branches: a fourth language must be a row here, not
+        # another `if` that some other call site forgets to grow.
+        self._voices_by_language = {
+            Language.EN: voice_en, Language.RO: voice_ro, Language.DE: voice_de,
+        }
         self.model_dir = Path(model_dir)
         self.chunk_ms = chunk_ms
         self.first_sentence_max_chars = first_sentence_max_chars
@@ -74,7 +88,7 @@ class PiperTtsEngine(TtsEngine):
     # ------------------------------------------------------------------ interface
 
     def voice_for(self, language: Language) -> str:
-        return self._voice_ro if language is Language.RO else self._voice_en
+        return self._voices_by_language[language]
 
     async def cancel(self) -> None:
         self.cancellations += 1
@@ -112,17 +126,13 @@ class PiperTtsEngine(TtsEngine):
             log.info("piper %s warm in %.0f ms", self.voice_for(language), timings[language])
         return timings
 
-    def _prime(self, voice, language: Language) -> None:
+    def _prime(self, voice, language: Language) -> None:  # noqa: D401
         """One throwaway synthesis. Loading the ONNX graph is not the whole cost: the first
         inference allocates its arenas and runs espeak-ng phonemisation for the first time."""
         # A full sentence, not one word: ONNX Runtime allocates per input shape, and priming
         # on "Ready." left the first real reply paying for it — measured as a 115 ms
         # time-to-first-audio on turn one against 40-60 ms afterwards.
-        text = (
-            "Bună dimineața. Am găsit trei mesaje noi de la bancă."
-            if language is Language.RO
-            else "Good morning. I found three new messages from the bank."
-        )
+        text = _PRIMING_SENTENCE[language]
         request = SynthesisRequest(text=text, language=language)
         for _ in self._iter_piper_audio(voice, text, request):
             return
