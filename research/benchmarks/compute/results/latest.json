@@ -453,20 +453,20 @@
   },
   "latency": {
     "baseline": {
-      "assembly_p50_ms": 0.01570799986438942,
-      "assembly_p95_ms": 0.4203330004202144,
-      "first_delta_p50_ms": 0.004042000000481494,
-      "first_delta_p95_ms": 0.017750000097294105,
+      "assembly_p50_ms": 0.014291000297816936,
+      "assembly_p95_ms": 0.44229099967196817,
+      "first_delta_p50_ms": 0.004250000529282261,
+      "first_delta_p95_ms": 0.018833000467566308,
       "mean_input_tokens": 479.4375,
       "mean_output_tokens": 6.59375,
       "cost_local_usd": 0.0,
       "cost_sonnet5_usd": 0.001018
     },
     "ars": {
-      "assembly_p50_ms": 0.014582999938284047,
-      "assembly_p95_ms": 0.38616699930571485,
-      "first_delta_p50_ms": 0.03866699989885092,
-      "first_delta_p95_ms": 0.7567500001641747,
+      "assembly_p50_ms": 0.014458999430644326,
+      "assembly_p95_ms": 0.43845700110978214,
+      "first_delta_p50_ms": 0.0407919997087447,
+      "first_delta_p95_ms": 0.7474579997506225,
       "mean_input_tokens": 1806.28125,
       "mean_output_tokens": 24.15625,
       "cost_local_usd": 0.0,

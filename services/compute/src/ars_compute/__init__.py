@@ -5,10 +5,17 @@
   * `turn`      — the orchestrator: stream, guard, act, feed back, stream again
   * `learning`  — behaviour observations, proposed to the user, never self-confirmed
   * `language`  — per-utterance reply language, code-switching, Romanian diacritics
+  * `reasoning` — how much the model may think before it speaks, and what that costs
   * `prompts`   — versioned prompt assets; no prompt string exists in this Python source
+
+Calling a backend: `LlmBackend.complete` is declared `async def` returning an
+`AsyncIterator`, so the contract-correct call is `async for x in await be.complete(...)`.
+Backends here also support the direct `async for x in be.complete(...)`, and
+`stream_reply()` works with either kind. See `backends/base.py`.
 """
 
 from .backends import (
+    DEFAULT_THINK_POLICY,
     AnthropicBackend,
     OllamaBackend,
     Router,
@@ -16,6 +23,7 @@ from .backends import (
     RoutingPolicy,
     Scene,
     ScriptedBackend,
+    ThinkPolicy,
 )
 from .context import (
     AssembledContext,
@@ -45,18 +53,50 @@ from .language import (
     restore_diacritics,
 )
 from .learning import BehaviourLearner, Evidence
+from .reasoning import ReasoningMode
 from .sensitivity import SensitivityLedger
+from .stream import stream_reply
 from .turn import TurnOrchestrator, TurnOutcome, TurnStats
 
 __version__ = "0.1.0"
 
 __all__ = [
-    "AnthropicBackend", "AssembledContext", "BackendUnavailable", "BehaviourLearner",
-    "CloudRoutingRefused", "ComputeError", "ContextAssembler", "ContextBudget",
-    "ContextOverflow", "DropStep", "Evidence", "LanguageSource", "NoBackendAvailable",
-    "OllamaBackend", "ReplyLanguage", "Router", "RoutingDecision", "RoutingPolicy",
-    "Scene", "ScriptedBackend", "SensitivityLedger", "Slot", "TaintBackstopTriggered",
-    "ToolBudgetExceeded", "TurnOrchestrator", "TurnOutcome", "TurnStats",
-    "detect_injection_markers", "detect_matrix_language", "diacritics_report",
-    "render_blocks", "resolve_reply_language", "restore_diacritics", "taint_of",
+    "DEFAULT_THINK_POLICY",
+    "AnthropicBackend",
+    "AssembledContext",
+    "BackendUnavailable",
+    "BehaviourLearner",
+    "CloudRoutingRefused",
+    "ComputeError",
+    "ContextAssembler",
+    "ContextBudget",
+    "ContextOverflow",
+    "DropStep",
+    "Evidence",
+    "LanguageSource",
+    "NoBackendAvailable",
+    "OllamaBackend",
+    "ReasoningMode",
+    "ReplyLanguage",
+    "Router",
+    "RoutingDecision",
+    "RoutingPolicy",
+    "Scene",
+    "ScriptedBackend",
+    "SensitivityLedger",
+    "Slot",
+    "TaintBackstopTriggered",
+    "ThinkPolicy",
+    "ToolBudgetExceeded",
+    "TurnOrchestrator",
+    "TurnOutcome",
+    "TurnStats",
+    "detect_injection_markers",
+    "detect_matrix_language",
+    "diacritics_report",
+    "render_blocks",
+    "resolve_reply_language",
+    "restore_diacritics",
+    "stream_reply",
+    "taint_of",
 ]

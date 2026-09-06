@@ -25,13 +25,18 @@ installed on this machine and no eval has been run against a live model, so writ
 number there would be a guess. `research/benchmarks/compute/run.py --backend ollama` on a
 machine that has Ollama is the first thing to do.
 
-| Backend | Model | Local | Ctx | Cost / turn (1.2k in, 120 out) | Cost / turn (2.6k in) | First token | Eval |
+| Backend | Model | Local | Ctx | Cost / turn (1.2k in, 120 out) | Cost / turn (2.6k in) | First token p50 / p95 | Eval |
 |---|---|:-:|--:|--:|--:|--:|--:|
-| `OllamaBackend` | `qwen3:14b` | ✅ | 8k | **$0.000000** | **$0.000000** | budget 200 ms | not yet measured |
+| `OllamaBackend` | `qwen3:14b` | ✅ | 8k | **$0.000000** | **$0.000000** | **111 / 118 ms** EN · **142 / 154 ms** RO | not yet measured |
 | `AnthropicBackend` | `claude-sonnet-5` | ❌ | 1M | $0.003600 | $0.006400 | not yet measured | not yet measured |
 | `AnthropicBackend` | `claude-haiku-4-5` | ❌ | 200k | $0.001800 | $0.003200 | not yet measured | not yet measured |
 | `AnthropicBackend` | `claude-opus-5` | ❌ | 1M | $0.009000 | $0.016000 | not yet measured | not yet measured |
 | `ScriptedBackend` | — | ✅ | — | $0 | $0 | ~0 ms | deterministic |
+
+Ollama numbers: M5 Max, `qwen3:14b` Q4_K_M, real `/api/chat`, warm weights and warm
+system-prompt prefix, `think: false`, 8 prompts per language. Both meet the 200 ms
+`llm_first_token` budget. Quality columns for the cloud models are still empty because no
+eval has been run against them; writing a number there would be a guess.
 
 Decisions already made, and why:
 
@@ -47,9 +52,93 @@ Decisions already made, and why:
   needs an eval showing the quality difference is worth the latency.
 * **`num_ctx = 8192` locally, not 32k.** KV cache growth dominates first-token latency on
   an M-series laptop. A bigger window is a latency decision with a number attached.
+* **Thinking is off for spoken turns.** See the next section. This is the single largest
+  latency lever in the service: 111 ms against 4221 ms.
 * **Neither backend uses a vendor SDK.** Both speak the documented HTTP API through
   `httpx`. Streaming and cancellation are properties of the transport, and barge-in has to
   close the socket rather than trust an SDK's context manager to get there.
+
+## Reasoning: how much the model may think
+
+`qwen3:14b` is a reasoning model. Left to itself it emits a thinking block before any
+visible content, so the first token the *user* hears arrives after the whole reasoning pass
+has finished. Measured on an M5 Max against a real server, warm, 8 prompts per language:
+
+| `think` | EN first token p50 / p95 | RO first token p50 / p95 | total p50 | output tokens |
+|---|--:|--:|--:|--:|
+| **`false`** (what we send) | **111 / 118 ms** | **142 / 154 ms** | 579 / 729 ms | 20 / 23 |
+| `true` | 4221 / 7389 ms | 5022 / 6791 ms | 4724 / 6067 ms | 187 / 201 |
+| omitted entirely | — | ~3900 ms | — | — |
+
+The budget for `llm_first_token` is 200 ms. **Omitting the field is not a safe default** —
+for a reasoning model it means "think as much as you like". The safe default is an explicit
+`false`, and that is what `ReasoningMode.OFF` sends.
+
+Two further findings, both in `reasoning.py` with the numbers:
+
+* **The intermediate levels are useless on this model.** `think: "low"` produced the same
+  ~600 characters of reasoning and the same ~2.8 s delay as `think: true`. For qwen3:14b it
+  is 111 ms or several seconds, with nothing in between. The vocabulary still expresses
+  `low`/`medium`/`high`/`max` because other models honour them and because the Anthropic
+  backend maps them onto `output_config.effort`.
+* **Thinking tokens are spent from `num_predict`.** With `think: true` and
+  `num_predict: 120`, the reasoning block consumed the whole allowance and the reply came
+  back **empty** (`done_reason: "length"`, 602 characters of thinking, 0 of content).
+  `OllamaBackend` therefore carries a separate, larger allowance for reasoning turns.
+
+Quality was unaffected on ordinary assistant turns: both settings produced correct,
+idiomatic Romanian with proper diacritics, and `test_ollama_live.py` asserts that.
+
+### The policy
+
+`ThinkPolicy` lives in `backends/router.py`, next to `RoutingPolicy`, because it is the
+same kind of decision made from the same information: buy quality with latency, or latency
+with quality. It is decided **per turn**, not configured per process — the same model in
+the same session must think for a typed question and not for a spoken one.
+
+| Turn | Mode | Why |
+|---|---|---|
+| Spoken, any round | `OFF` | The user is sitting in silence. 200 ms budget, ~4 s cost. |
+| Typed | `ON` | No first-audio budget. A screen can show "thinking" honestly. |
+| Typed + escalated | `ON` | The router already judged it worth spending on. |
+| Spoken, round ≥ 1 after a filler | `spoken_after_filler`, default `OFF` | Available, off. The user is still waiting for an answer after the tool returns, and 4 s of silence there is 4 s of silence. |
+
+`spoken_after_filler` is the *only* setting by which a spoken turn can ever think.
+Escalation deliberately has no say on the spoken path: it means the question is hard, not
+that the user stopped waiting for a voice to start. One line to read when asking "can this
+path be slow".
+
+Reproduce all of it, including the cold-start cliff:
+
+```bash
+uv run python research/benchmarks/compute/latency_live.py            # 111 / 116 ms, PASS
+uv run python research/benchmarks/compute/latency_live.py --think    # the slow arm
+uv run python research/benchmarks/compute/latency_live.py --no-warm  # p95 1162 ms, OVER
+```
+
+`OllamaBackend` only sends `think` to models that take it. Verified against a live server:
+Ollama **ignores unknown top-level fields** (an unknown key returns 200) but validates
+`think` strictly (a bad value returns 400 naming the valid set). Since the behaviour for a
+model without the `thinking` capability is undocumented, the backend is optimistic and
+self-correcting: it sends the field, and on a 4xx that mentions `think` it records that the
+model does not support it, drops the field and retries once. Calling `capabilities()` at
+startup — which reads `/api/show` — resolves it up front and avoids even that one retry.
+
+### Warm both languages at startup
+
+A.R.S has one system prompt per language, so it has one KV-cache prefix per language, so it
+has one cold start per language. Measured: with weights already loaded, the first Romanian
+turn of a process still cost **1158 ms** to first token while every later one cost ~30 ms.
+Alternating EN/RO afterwards is free (116–139 ms either way), so it is a one-off per prefix,
+not a per-switch cost.
+
+`OllamaBackend.warm([...])` prefills them. It costs two one-token generations at startup and
+removes a 1.1 s cliff from the first Romanian utterance after every restart — which is
+exactly the moment a bilingual household forms its opinion of the assistant.
+
+```python
+await backend.warm([assembler.build_system(lang)[0] for lang in (Language.EN, Language.RO)])
+```
 
 ## Context budget
 
@@ -148,13 +237,39 @@ never edit a shipped one, because eval results are recorded against the version 
 ## Running things
 
 ```bash
-uv run pytest tests/unit/compute -q                      # 170 tests, no network
+uv run pytest tests/unit/compute -q                      # no network needed
 uv run python research/benchmarks/compute/run.py         # eval delta table
+
+# Latency gate. Needs a real server; skips (loudly) without one.
+ollama serve & ollama pull qwen3:14b
+uv run pytest tests/unit/compute/test_ollama_live.py -v
 ```
+
+`test_ollama_live.py` is the only test in this service that can catch a latency
+regression. The `think` cliff — 16.9 s to first token against a 200 ms budget — passed the
+entire scripted suite, because a scripted model has no opinion about how long a real one
+takes to start talking.
+
+It gates on the **best** of five samples, not the median or the max, because a gate and a
+benchmark want different statistics. Contention on a shared GPU produces a few multi-second
+outliers among good samples (observed `[161, 907, 4123, 177, 259]` with an unrelated job
+running) and says nothing about this code; the regression moves *every* sample, because
+thinking happens on every request. Verified both directions on real hardware:
+
+| | samples (ms) | best | gate |
+|---|---|--:|:--|
+| fixed | `[116, 30, 31, 32, 31]` | 30 ms | PASS |
+| `think` dropped | `[2668, 3066, 3271, 3067, 3145]` | 2668 ms | **FAIL** |
+
+The published p50/p95 come from `latency_live.py` on an idle machine, which is where
+percentile numbers belong. The suite also skips itself, loudly, if a bare one-token probe
+shows the server is already saturated.
 
 ## Known gaps
 
-* No eval against a real model. Every quality claim here is about A.R.S's own behaviour
+* Cloud backends have never been run. All Anthropic numbers are prices and doc-derived
+  wire shapes, not measurements.
+* No quality eval against a real model. Every quality claim here is about A.R.S's own behaviour
   (routing, framing, taint, language selection), not about generation quality.
 * `sensitivity.py` ships a regex baseline written by ml-engineer. The real rule set and
   the redaction-rather-than-refusal path belong to `security-engineer`;

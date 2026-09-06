@@ -18,6 +18,14 @@ Two differences from the Anthropic path are worth knowing before reading the cod
     and the tool result is fed back with `role: "tool"` plus `tool_name`, which is how
     Ollama's chat templates match a result to a call.
 
+**Thinking is off by default, and that is a latency decision with a measurement behind
+it.** `qwen3:14b` is a reasoning model: unless told otherwise it emits a thinking block
+before any visible content, so the first token the user hears arrives after the entire
+reasoning pass. Measured warm on an M5 Max: 29 ms to first visible token with
+`"think": false`, ~2.8 s with it on, ~17 s with the field omitted entirely. The budget is
+200 ms. See `ars_compute.reasoning` for the full table and `ThinkPolicy` for when a turn
+is allowed to buy thinking anyway.
+
 Cancellation matters more here than anywhere else in the codebase. Barge-in has to *stop
 generation*, not stop listening: a 14B model on a laptop that keeps decoding after the
 user interrupts is holding the GPU that the next turn needs. Closing the streaming
@@ -25,19 +33,19 @@ response terminates the HTTP request, and Ollama aborts the running generation w
 client disconnects. That is why this file owns the transport rather than delegating to a
 client library whose cancellation semantics we would have to trust.
 
-Ollama is NOT installed on the development machine this was written on. This module is
-written against the documented API and exercised by `tests/unit/test_ollama_wire.py`,
-which drives `_parse_chunk` and the message conversion over recorded fixtures. The first
-thing to do on a machine that has Ollama is run `research/benchmarks/compute/run.py
---backend ollama` and fill in the latency column with measured numbers instead of the
-budget.
+Ollama is NOT installed on the development machine this was written on. This module is exercised by
+`tests/unit/compute/test_backend_wire.py` over recorded response bodies, and by
+`tests/unit/compute/test_ollama_live.py`, which runs against a real server when one is
+listening on 127.0.0.1:11434 and skips otherwise. The live test is the only kind that
+catches a latency cliff, because a scripted backend has no opinion about how long a real
+model takes to start speaking.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 import httpx
@@ -45,6 +53,7 @@ from ars_protocol import Language, ToolCall, ToolSpec
 
 from ..context import Role
 from ..errors import BackendUnavailable
+from ..reasoning import ReasoningMode
 from ..tokens import FREE
 from ..toolschema import to_ollama
 from .base import BackendInfo, BaseBackend, Message, StreamStats
@@ -77,7 +86,13 @@ def to_wire(system: str, messages: list[Message]) -> list[dict[str, Any]]:
 
 
 def parse_chunk(line: str) -> tuple[str, list[ToolCall], bool, dict[str, Any]]:
-    """One NDJSON line -> (text delta, tool calls, done, metrics).
+    """One NDJSON line -> (visible text delta, tool calls, done, metrics).
+
+    A reasoning model puts its chain of thought in `message.thinking`, a sibling of
+    `message.content`. Only `content` is returned here. Thinking is not the answer, and
+    streaming it into `ReplyDelta` would put the model's private reasoning through TTS and
+    read it aloud to the user. The thinking length is counted into the metrics instead, so
+    a turn that spent its whole output allowance on reasoning is visible in telemetry.
 
     Tolerant by design: a malformed line is skipped rather than killing the turn, because
     a local server under memory pressure occasionally truncates a write and the user
@@ -95,6 +110,7 @@ def parse_chunk(line: str) -> tuple[str, list[ToolCall], bool, dict[str, Any]]:
 
     msg = obj.get("message") or {}
     text = msg.get("content") or ""
+    thinking = msg.get("thinking") or ""
     calls: list[ToolCall] = []
     for tc in msg.get("tool_calls") or []:
         fn = tc.get("function") or {}
@@ -108,7 +124,8 @@ def parse_chunk(line: str) -> tuple[str, list[ToolCall], bool, dict[str, Any]]:
         calls.append(ToolCall(tool=fn.get("name", ""), arguments=dict(args or {})))
 
     done = bool(obj.get("done"))
-    metrics = {
+    metrics: dict[str, Any] = {"thinking_chars": len(thinking)} if thinking else {}
+    metrics |= {
         k: obj[k] for k in
         ("done_reason", "total_duration", "load_duration", "prompt_eval_count",
          "prompt_eval_duration", "eval_count", "eval_duration")
@@ -128,6 +145,7 @@ class OllamaBackend(BaseBackend):
         num_ctx: int = 8192,
         temperature: float = 0.3,
         num_predict: int = 768,
+        num_predict_thinking: int = 3072,
         keep_alive: str = "10m",
         connect_timeout_s: float = 2.0,
         read_timeout_s: float = 120.0,
@@ -138,7 +156,13 @@ class OllamaBackend(BaseBackend):
         self._num_ctx = num_ctx
         self._temperature = temperature
         self._num_predict = num_predict
+        self._num_predict_thinking = num_predict_thinking
         self._keep_alive = keep_alive
+        self._thinking_supported: bool | None = None
+        """Tri-state. None = not yet known, and we optimistically send the field anyway;
+        a 400 downgrades it to False for the rest of the process. Probing up front would
+        add a round trip to the first turn of every session for a question that almost
+        always has the same answer."""
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=self._host,
@@ -151,7 +175,9 @@ class OllamaBackend(BaseBackend):
             notes=(
                 "reference deployment. Cost is zero and stays zero; the budgeted price is "
                 "latency and the GPU. num_ctx is held at 8192 because KV cache growth is "
-                "the dominant term in first-token latency on an M-series laptop."
+                "the dominant term in first-token latency on an M-series laptop. Thinking "
+                "is off unless a turn buys it: measured 29 ms to first token with "
+                "think=false against ~2.8 s with it on, on a 200 ms budget."
             ),
         )
 
@@ -164,6 +190,56 @@ class OllamaBackend(BaseBackend):
             return r.status_code == 200
         except (httpx.HTTPError, OSError):
             return False
+
+    async def capabilities(self) -> frozenset[str]:
+        """What this model can do, per the server. `/api/show` returns e.g.
+        `["completion", "tools", "thinking"]`.
+
+        Worth calling once at startup: it resolves `_thinking_supported` before any user is
+        waiting, which removes the one-off 400-and-retry from the first real turn.
+        """
+        try:
+            r = await self._client.post("/api/show", json={"model": self.info.model},
+                                        timeout=httpx.Timeout(3.0, connect=1.0))
+            r.raise_for_status()
+            caps = frozenset(r.json().get("capabilities") or ())
+        except (httpx.HTTPError, OSError, ValueError):
+            return frozenset()
+        if caps:
+            self._thinking_supported = "thinking" in caps
+        return caps
+
+    async def warm(self, systems: Sequence[str]) -> dict[str, float]:
+        """Prefill the KV cache for each system prompt. Call once at startup.
+
+        Measured: with the weights already loaded, the *first* turn in a given language
+        still costs ~1.1 s to first token, while every later turn costs ~120 ms. The
+        difference is the system-prompt prefix — A.R.S has one per language (884 tokens EN,
+        1184 RO) and the first request in each has to prefill it.
+
+        A bilingual household hits that on the first Romanian utterance after a restart,
+        which is exactly the moment the assistant is being judged. Warming both prefixes
+        costs two one-token generations at startup and removes it. Alternating between the
+        two afterwards is free — measured at 116-139 ms either way, so the server keeps
+        both prefixes, and this is a one-off cost rather than a per-switch one.
+
+        Returns per-prompt warm durations for the startup log. Failures are swallowed:
+        warming is an optimisation, and a cold cache must never stop A.R.S booting.
+        """
+        timings: dict[str, float] = {}
+        for system in systems:
+            t0 = asyncio.get_running_loop().time()
+            body = self.payload(system, [Message(role=Role.USER, text=".")], ())
+            body["options"] = {**body["options"], "num_predict": 1}
+            body["stream"] = False
+            try:
+                r = await self._client.post("/api/chat", json=body,
+                                            timeout=httpx.Timeout(120.0, connect=2.0))
+                r.raise_for_status()
+            except (httpx.HTTPError, OSError):
+                continue
+            timings[system[:24]] = (asyncio.get_running_loop().time() - t0) * 1000
+        return timings
 
     async def model_present(self) -> bool:
         try:
@@ -179,8 +255,23 @@ class OllamaBackend(BaseBackend):
             await self._client.aclose()
 
     # ---------------------------------------------------------------- stream
-    def payload(self, system: str, messages: list[Message],
-                tools: tuple[ToolSpec, ...]) -> dict[str, Any]:
+    def payload(self, system: str, messages: list[Message], tools: tuple[ToolSpec, ...],
+                reasoning: ReasoningMode = ReasoningMode.OFF) -> dict[str, Any]:
+        """Build the `/api/chat` body.
+
+        Two things here are load-bearing:
+
+        `think` is sent unless we know the model rejects it. Omitting the field is NOT a
+        safe default — for a reasoning model it means "think as much as you like", which
+        measured ~17 s to first token. The safe default is an explicit `false`.
+
+        `num_predict` grows when reasoning is on, because Ollama spends thinking tokens
+        from the same allowance as the reply. Measured: `think: true` with
+        `num_predict: 120` returned `done_reason: "length"`, 602 characters of thinking and
+        an **empty** reply. Enabling reasoning without raising the allowance converts a slow
+        answer into no answer at all.
+        """
+        thinking = reasoning.thinks
         body: dict[str, Any] = {
             "model": self.info.model,
             "messages": to_wire(system, messages),
@@ -189,29 +280,47 @@ class OllamaBackend(BaseBackend):
             "options": {
                 "temperature": self._temperature,
                 "num_ctx": self._num_ctx,
-                "num_predict": self._num_predict,
+                "num_predict": self._num_predict_thinking if thinking else self._num_predict,
                 # Stop the model narrating a fence it was told never to write.
                 "stop": ["<<<ARS-EXTERNAL-"],
             },
         }
+        think = reasoning.ollama_think
+        if think is not None and self._thinking_supported is not False:
+            body["think"] = think
         if tools:
             body["tools"] = to_ollama(tools)
         return body
 
     async def stream(
         self, *, system: str, messages: list[Message], tools: tuple[ToolSpec, ...],
-        language: Language,
+        language: Language, reasoning: ReasoningMode = ReasoningMode.OFF,
     ) -> AsyncIterator[str | ToolCall]:
         loop = asyncio.get_running_loop()
         t0 = loop.time()
         stats = StreamStats(model=self.info.model)
+        stats.extra["reasoning"] = reasoning.value
         self.last_stats = stats
-        body = self.payload(system, messages, tools)
+        body = self.payload(system, messages, tools, reasoning)
 
         try:
             async with self._client.stream("POST", "/api/chat", json=body) as response:
                 if response.status_code >= 400:
                     detail = (await response.aread()).decode("utf-8", "replace")[:400]
+                    if "think" in body and _rejected_think(response.status_code, detail):
+                        # This model does not take the field. Remember it, drop it, and
+                        # try once more rather than failing a turn over a hint. Costs one
+                        # round trip, once per process; `capabilities()` at startup avoids
+                        # even that.
+                        self._thinking_supported = False
+                        stats.extra["think_rejected"] = detail[:120]
+                        body = self.payload(system, messages, tools, reasoning)
+                        async for piece in self.stream(
+                            system=system, messages=messages, tools=tools,
+                            language=language, reasoning=ReasoningMode.PROVIDER_DEFAULT,
+                        ):
+                            yield piece
+                        return
                     raise BackendUnavailable("ollama", f"HTTP {response.status_code}: {detail}")
 
                 async for line in response.aiter_lines():
@@ -221,6 +330,10 @@ class OllamaBackend(BaseBackend):
                         # actually aborts generation on the server.
                         break
                     text, calls, done, metrics = parse_chunk(line)
+                    if "thinking_chars" in metrics:
+                        stats.extra["thinking_chars"] = (
+                            stats.extra.get("thinking_chars", 0) + metrics["thinking_chars"]
+                        )
                     if text:
                         if stats.first_token_ms is None:
                             stats.first_token_ms = (loop.time() - t0) * 1000.0
@@ -233,7 +346,9 @@ class OllamaBackend(BaseBackend):
                     if done:
                         stats.input_tokens = int(metrics.get("prompt_eval_count", 0))
                         stats.output_tokens = int(metrics.get("eval_count", 0))
-                        stats.extra = metrics
+                        stats.extra |= metrics
+                        if metrics.get("done_reason") == "length" and not stats.output_tokens:
+                            stats.extra["empty_reply"] = True
                         break
         except httpx.ConnectError as exc:
             raise BackendUnavailable(
@@ -245,6 +360,19 @@ class OllamaBackend(BaseBackend):
             raise BackendUnavailable("ollama", f"{type(exc).__name__}: {exc}") from exc
         finally:
             stats.total_ms = (loop.time() - t0) * 1000.0
+
+
+def _rejected_think(status: int, detail: str) -> bool:
+    """Did the server refuse specifically because of the `think` field?
+
+    Verified against a live server: Ollama *ignores* unrecognised top-level fields (an
+    unknown key returns 200), but validates `think` strictly — a bad value returns 400 with
+    `invalid think value: ... (must be "high", "medium", "low", "max", true, or false)`.
+    What a model without the `thinking` capability does is not documented, so this matches
+    on the field name in any 4xx and treats that as "drop it and retry". A false positive
+    costs one extra request; a false negative would fail the turn.
+    """
+    return 400 <= status < 500 and "think" in detail.lower()
 
 
 __all__ = ["OllamaBackend", "parse_chunk", "to_wire"]

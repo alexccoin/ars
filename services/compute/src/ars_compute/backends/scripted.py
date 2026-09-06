@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from ars_protocol import Language, ToolCall, ToolSpec
 
+from ..reasoning import ReasoningMode
 from ..tokens import DEFAULT_ESTIMATOR, FREE
 from .base import BackendInfo, BaseBackend, Message, StreamStats
 
@@ -34,6 +35,10 @@ class Invocation:
     tools: tuple[ToolSpec, ...]
     language: Language
     index: int
+    reasoning: ReasoningMode = ReasoningMode.OFF
+    """What the orchestrator decided this turn could afford to think. Recorded so a test
+    can assert the latency-critical path asked for no thinking — that cliff is invisible
+    to a scripted model otherwise, which is exactly how it came back the first time."""
 
     @property
     def prompt(self) -> str:
@@ -117,10 +122,10 @@ class ScriptedBackend(BaseBackend):
 
     async def stream(
         self, *, system: str, messages: list[Message], tools: tuple[ToolSpec, ...],
-        language: Language,
+        language: Language, reasoning: ReasoningMode = ReasoningMode.OFF,
     ) -> AsyncIterator[str | ToolCall]:
         inv = Invocation(system=system, messages=tuple(messages), tools=tools,
-                         language=language, index=self._call_index)
+                         language=language, index=self._call_index, reasoning=reasoning)
         self._call_index += 1
         self.invocations.append(inv)
 

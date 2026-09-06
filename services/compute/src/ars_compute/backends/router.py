@@ -17,6 +17,11 @@ from being wrong, and the failure is silent and unrecoverable — the data is al
 provider. An exception has to be caught deliberately by someone who has to explain why,
 and no such catch exists in this codebase.
 
+This module also owns the *reasoning* policy — how much the model may think before it
+speaks. That is the same kind of decision as local-vs-cloud (buy quality with latency, or
+latency with quality), it is made per turn from the same information, and it belongs in
+the same place. See `ThinkPolicy` and `ars_compute.reasoning`.
+
 The sensitivity check runs **twice**: once on what the assembler declared (authoritative,
 from `MemoryRecord.sensitivity`), once as a fresh scan of every block's text immediately
 before dispatch (catches blocks that never went through the assembler, such as a tool
@@ -25,15 +30,18 @@ result added mid-turn). Either one firing is enough to refuse.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import lru_cache
 
 from ars_core import LlmBackend
 from ars_protocol import ContentBlock, Language, ToolCall, ToolSpec, TrustLevel
 
 from ..context import URI_ROUTING_HINT, AssembledContext
 from ..errors import CloudRoutingRefused, NoBackendAvailable
+from ..reasoning import ReasoningMode
 from ..sensitivity import (
     DEFAULT_CLASSIFIER,
     SensitivityClassifier,
@@ -61,6 +69,67 @@ class RoutingPolicy(StrEnum):
 
 
 @dataclass(frozen=True)
+class ThinkPolicy:
+    """How much the model may think, decided per turn.
+
+    The rule that does the work is the first one: **a spoken turn never thinks.** The user
+    is sitting in silence waiting for audio, the budget to first token is 200 ms, and
+    thinking costs ~2.8 s on the local model (`ars_compute.reasoning` has the numbers).
+    There is no version of that trade which is worth making while someone is listening to
+    nothing.
+
+    Everything else can afford it:
+
+    * **Typed** turns have no first-audio budget. Nobody is listening to silence; they are
+      looking at a screen that can show a "thinking" state honestly. Quality wins.
+    * **Escalated** turns are, by definition, ones the router already judged hard enough to
+      be worth spending on — the same judgement that sends a turn to the cloud says it is
+      worth thinking about.
+    * **Later rounds of a tool loop**, once the filler acknowledgement has been spoken.
+      This one is deliberately conservative and defaults to OFF: the architecture doc gives
+      a tool-calling turn its own budget, but the user is still waiting for an answer after
+      the tool returns, and 2.8 s of silence there is 2.8 s of silence. Available, off.
+
+    Every field is a `ReasoningMode` rather than a bool so that a deployment with a model
+    whose intermediate levels actually work can use them without touching this code.
+    """
+
+    spoken: ReasoningMode = ReasoningMode.OFF
+    """Hard requirement, not a preference. Overriding this to a thinking mode is how the
+    voice pipeline stops meeting its budget, so it is worth a review comment."""
+
+    typed: ReasoningMode = ReasoningMode.ON
+    escalated: ReasoningMode = ReasoningMode.ON
+    """Typed turns only. A spoken turn is governed by `spoken` / `spoken_after_filler`
+    whether or not it was escalated."""
+
+    spoken_after_filler: ReasoningMode = ReasoningMode.OFF
+    """Applies from the second model round of a spoken turn, once a filler has been
+    spoken. Defaults to OFF; see the class docstring."""
+
+    def decide(
+        self,
+        *,
+        spoken: bool,
+        escalated: bool = False,
+        round_index: int = 0,
+        filler_spoken: bool = False,
+    ) -> ReasoningMode:
+        if not spoken:
+            return self.escalated if escalated else self.typed
+        # Spoken from here down. Escalation deliberately has no say: it means the question
+        # is hard, not that the user stopped waiting for a voice to start. `spoken_after
+        # _filler` is the single, explicit knob by which a spoken turn may ever think, so
+        # there is exactly one line to read when asking "can this path be slow".
+        if round_index > 0 and filler_spoken:
+            return self.spoken_after_filler
+        return self.spoken
+
+
+DEFAULT_THINK_POLICY = ThinkPolicy()
+
+
+@dataclass(frozen=True)
 class RoutingDecision:
     backend: str
     model: str
@@ -73,6 +142,34 @@ class RoutingDecision:
     @property
     def left_the_device(self) -> bool:
         return not self.runs_locally
+
+
+async def _dispatch(backend: LlmBackend, *, system: str, context: tuple[ContentBlock, ...],
+                    tools: Sequence[ToolSpec], language: Language,
+                    reasoning: ReasoningMode) -> AsyncIterator[str | ToolCall]:
+    """Call `complete()` on any `LlmBackend`, passing `reasoning` only if it takes it.
+
+    `reasoning` is an addition of ours; a third-party backend implementing the bare
+    `packages/core` interface will not have the parameter, and dropping it is the right
+    degradation — that backend has no thinking to switch off.
+
+    The check is on the signature, not a `TypeError` around the call. Catching `TypeError`
+    would also catch one raised *inside* the backend and then silently retry the request,
+    which on an effectful path is how you send an email twice.
+    """
+    if _takes_reasoning(type(backend)):
+        return await backend.complete(system=system, context=context, tools=tools,
+                                      language=language, reasoning=reasoning)
+    return await backend.complete(system=system, context=context, tools=tools,
+                                  language=language)
+
+
+@lru_cache(maxsize=64)
+def _takes_reasoning(backend_type: type) -> bool:
+    try:
+        return "reasoning" in inspect.signature(backend_type.complete).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def escalation_requested(blocks: Sequence[ContentBlock]) -> bool:
@@ -209,27 +306,30 @@ class Router(LlmBackend):
     async def complete(
         self, *, system: str, context: Sequence[ContentBlock],
         tools: Sequence[ToolSpec] = (), language: Language,
+        reasoning: ReasoningMode = ReasoningMode.OFF,
     ) -> AsyncIterator[str | ToolCall]:
         blocks = tuple(context)
         backend, _ = await self.choose(blocks)
-        return await backend.complete(
-            system=system, context=blocks, tools=tools, language=language
-        )
+        return await _dispatch(backend, system=system, context=blocks, tools=tools,
+                               language=language, reasoning=reasoning)
 
     async def complete_context(
-        self, ctx: AssembledContext, *, tools: Sequence[ToolSpec] = ()
+        self, ctx: AssembledContext, *, tools: Sequence[ToolSpec] = (),
+        reasoning: ReasoningMode = ReasoningMode.OFF,
     ) -> AsyncIterator[str | ToolCall]:
         backend, _ = await self.choose(ctx.blocks, ledger=ctx.ledger)
         fn = getattr(backend, "complete_context", None)
         if fn is not None:
-            return await fn(ctx, tools=tools)
-        return await backend.complete(
-            system=ctx.system, context=ctx.blocks, tools=tools, language=ctx.reply_language
-        )
+            return await fn(ctx, tools=tools, reasoning=reasoning)
+        return await _dispatch(backend, system=ctx.system, context=ctx.blocks, tools=tools,
+                               language=ctx.reply_language, reasoning=reasoning)
 
     @property
     def active(self) -> LlmBackend:
         return self._active
 
 
-__all__ = ["ESCALATION_TOKEN", "Router", "RoutingDecision", "RoutingPolicy", "escalation_requested"]
+__all__ = [
+    "DEFAULT_THINK_POLICY", "ESCALATION_TOKEN", "ReasoningMode", "Router",
+    "RoutingDecision", "RoutingPolicy", "ThinkPolicy", "escalation_requested",
+]

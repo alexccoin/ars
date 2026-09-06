@@ -92,7 +92,7 @@ class LlmBackend(ABC):
     identically so routing between them is a policy decision, never a code change."""
 
     @abstractmethod
-    async def complete(
+    def complete(
         self,
         *,
         system: str,
@@ -101,6 +101,16 @@ class LlmBackend(ABC):
         language: Language,
     ) -> AsyncIterator[str | ToolCall]:
         """Streams text deltas and tool calls interleaved.
+
+            async for piece in backend.complete(system=..., context=..., language=...):
+                ...
+
+        Note the absence of `await`. This was `async def` and therefore returned a
+        coroutine, so every caller had to write `async for x in await backend.complete(...)`
+        — a double-await that everyone gets wrong once, and that forced implementations
+        to carry `# type: ignore[override]`. An async generator function already returns
+        an AsyncIterator when called; declaring the seam `def` is what lets an
+        implementation be a plain async generator and read naturally at the call site.
 
         `context` is a sequence of ContentBlock, never bare strings: the backend is
         responsible for rendering untrusted blocks inside an explicit quarantine frame

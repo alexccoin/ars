@@ -23,6 +23,13 @@ before anything irreversible happens.
 sets an event that every await point in this file races against, and it propagates to the
 backend so generation actually stops rather than merely being ignored.
 
+**It starts speaking fast enough to be heard as an answer.** A reasoning model left at its
+default spends seconds thinking before the first visible token, which on the voice path is
+seconds of silence. `ThinkPolicy` decides per turn, and a spoken turn gets
+`ReasoningMode.OFF`. This is enforced here rather than configured in the backend, because
+it depends on how the turn arrived — the same model, same session, must think for a typed
+question and not for a spoken one.
+
 **It speaks within 600 ms of starting a tool call.** `docs/architecture/overview.md` gives
 a turn with a tool call a filler acknowledgement deadline of 600 ms. TTS needs 120 ms of
 that, so the filler text is emitted at `filler_at_ms` (300 ms by default), leaving
@@ -73,7 +80,7 @@ from ars_protocol import (
 
 from . import prompts
 from .backends.base import BaseBackend
-from .backends.router import Router
+from .backends.router import DEFAULT_THINK_POLICY, Router, ThinkPolicy
 from .context import (
     PROV_ASSISTANT,
     AssembledContext,
@@ -87,6 +94,7 @@ from .errors import (
     TaintBackstopTriggered,
 )
 from .language import DiacriticRepairStream, ReplyLanguage, resolve_reply_language
+from .reasoning import ReasoningMode
 
 RESOURCE_KEYS: tuple[str, ...] = (
     "url", "uri", "link", "path", "file", "filename", "repo", "repository",
@@ -110,6 +118,9 @@ class TurnStats:
     denied: int = 0
     filler_spoken: bool = False
     filler_at_ms: float | None = None
+    reasoning: str = ""
+    """The mode used on the first model round — the one the first-token budget is measured
+    against. Reported so a latency regression can be traced to a policy change."""
     input_tokens: int = 0
     output_tokens: int = 0
     backend: str = ""
@@ -145,6 +156,7 @@ class TurnOrchestrator:
         filler_at_ms: float = 300.0,
         filler_deadline_ms: float = 600.0,
         tool_timeout_s: float = 30.0,
+        think_policy: ThinkPolicy = DEFAULT_THINK_POLICY,
         announce_injections: bool = True,
         taint_backstop: bool = True,
         learner: object | None = None,
@@ -157,6 +169,7 @@ class TurnOrchestrator:
         self.filler_at_ms = filler_at_ms
         self.filler_deadline_ms = filler_deadline_ms
         self.tool_timeout_s = tool_timeout_s
+        self.think_policy = think_policy
         self.announce_injections = announce_injections
         self.taint_backstop = taint_backstop
         self.learner = learner
@@ -227,10 +240,19 @@ class TurnOrchestrator:
                 turn = Turn(id=turn.id, session_id=turn.session_id,
                             started_at_ms=turn.started_at_ms, tainted=ctx.tainted)
 
+                reasoning = self.think_policy.decide(
+                    spoken=spoken,
+                    escalated=isinstance(self.backend, Router) and self.backend.preview(ctx),
+                    round_index=_round,
+                    filler_spoken=stats.filler_spoken,
+                )
+                if _round == 0:
+                    stats.reasoning = reasoning.value
+
                 pending: ToolCall | None = None
                 repair = DiacriticRepairStream(language.language)
 
-                async for piece in await self._start_stream(ctx, tool_specs):
+                async for piece in await self._start_stream(ctx, tool_specs, reasoning):
                     if self.cancelled:
                         break
                     if isinstance(piece, str):
@@ -403,13 +425,14 @@ class TurnOrchestrator:
             ctx = self.assembler.assemble(budget=self.assembler.budget.for_cloud(), **kwargs)  # type: ignore[arg-type]
         return ctx
 
-    async def _start_stream(self, ctx: AssembledContext,
-                            tools: tuple[ToolSpec, ...]) -> AsyncIterator[str | ToolCall]:
+    async def _start_stream(self, ctx: AssembledContext, tools: tuple[ToolSpec, ...],
+                            reasoning: ReasoningMode) -> AsyncIterator[str | ToolCall]:
         fn = getattr(self.backend, "complete_context", None)
         if fn is not None:
-            return await fn(ctx, tools=tools)
+            return await fn(ctx, tools=tools, reasoning=reasoning)
         return await self.backend.complete(
-            system=ctx.system, context=ctx.blocks, tools=tools, language=ctx.reply_language
+            system=ctx.system, context=ctx.blocks, tools=tools,
+            language=ctx.reply_language, reasoning=reasoning,
         )
 
     async def _authorise(self, *, session: Session, turn: Turn, call: ToolCall,

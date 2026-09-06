@@ -14,6 +14,27 @@ is a deliberate choice, not laziness:
 
 The provider-specific wire shapes are still confined to their own module, so the rule
 holds and swapping in an SDK later touches one file.
+
+## Calling `complete()` — read this before wiring a caller
+
+`ars_core.interfaces.LlmBackend.complete` is declared `async def ... -> AsyncIterator[...]`,
+which means the literal contract is **await first, then iterate**:
+
+    stream = await backend.complete(...)
+    async for piece in stream: ...
+
+    # or, in one line, with the double keyword that catches everyone out:
+    async for piece in await backend.complete(...): ...
+
+That signature is contract in `packages/core` and is not ours to change unilaterally, so
+`BaseBackend.complete` returns an object that supports **both** forms. `await` yields the
+async iterator, exactly as the interface promises; iterating directly also works. Writing
+`async for piece in backend.complete(...)` is therefore correct against this
+implementation and is the form the gateway should use.
+
+The `await`-less form only works for backends deriving from `BaseBackend`. A caller
+holding a bare `LlmBackend` should either await, or use `ars_compute.stream_reply()`,
+which hides the difference.
 """
 
 from __future__ import annotations
@@ -27,6 +48,7 @@ from ars_core import LlmBackend
 from ars_protocol import ContentBlock, Language, ToolCall, ToolSpec
 
 from ..context import AssembledContext, ContextAssembler, Role, role_of
+from ..reasoning import ReasoningMode
 from ..tokens import FREE, Price
 
 
@@ -78,6 +100,35 @@ def merge_messages(messages: list[Message]) -> list[Message]:
     return out
 
 
+class AwaitableStream:
+    """An async iterator that is also awaitable, yielding itself.
+
+    Exists for one reason: `LlmBackend.complete` is declared `async def` returning an
+    `AsyncIterator`, so the contract-correct call is `async for x in await be.complete()`.
+    That double keyword reads like a mistake, and every caller writes it wrong at least
+    once. Returning this from `complete()` makes both spellings work without touching the
+    signature in `packages/core`, which is contract owned by system-architect.
+    """
+
+    __slots__ = ("_agen",)
+
+    def __init__(self, agen: AsyncIterator[str | ToolCall]) -> None:
+        self._agen = agen
+
+    def __await__(self):  # type: ignore[no-untyped-def]
+        async def _identity() -> AsyncIterator[str | ToolCall]:
+            return self._agen
+        return _identity().__await__()
+
+    def __aiter__(self) -> AsyncIterator[str | ToolCall]:
+        return self._agen.__aiter__()
+
+    async def aclose(self) -> None:
+        aclose = getattr(self._agen, "aclose", None)
+        if aclose is not None:
+            await aclose()
+
+
 class BaseBackend(LlmBackend):
     """Implements the `LlmBackend` seam and adds one extra entry point.
 
@@ -111,37 +162,48 @@ class BaseBackend(LlmBackend):
     def cancelled(self) -> bool:
         return self._cancel.is_set()
 
-    async def complete(
+    def complete(
         self,
         *,
         system: str,
         context: Sequence[ContentBlock],
         tools: Sequence[ToolSpec] = (),
         language: Language,
-    ) -> AsyncIterator[str | ToolCall]:
+        reasoning: ReasoningMode = ReasoningMode.OFF,
+    ) -> AwaitableStream:
+        """Interface entry point. Returns a stream that may be awaited or iterated.
+
+        `reasoning` defaults to OFF rather than to the provider's default, deliberately.
+        A caller who has not thought about it is most likely the voice path, where a
+        thinking model costs ~2.8 s to first token against a 200 ms budget. The safe
+        default is the fast one; buying reasoning is an explicit act.
+        """
         self.reset()
-        return self.stream(
+        return AwaitableStream(self.stream(
             system=system,
             messages=self.messages_from_blocks(tuple(context), language),
             tools=tuple(tools),
             language=language,
-        )
+            reasoning=reasoning,
+        ))
 
-    async def complete_context(
-        self, ctx: AssembledContext, *, tools: Sequence[ToolSpec] = ()
-    ) -> AsyncIterator[str | ToolCall]:
+    def complete_context(
+        self, ctx: AssembledContext, *, tools: Sequence[ToolSpec] = (),
+        reasoning: ReasoningMode = ReasoningMode.OFF,
+    ) -> AwaitableStream:
         self.reset()
-        return self.stream(
+        return AwaitableStream(self.stream(
             system=ctx.system,
             messages=self.messages_from_context(ctx),
             tools=tuple(tools),
             language=ctx.reply_language,
-        )
+            reasoning=reasoning,
+        ))
 
     @abstractmethod
     def stream(
         self, *, system: str, messages: list[Message], tools: tuple[ToolSpec, ...],
-        language: Language,
+        language: Language, reasoning: ReasoningMode = ReasoningMode.OFF,
     ) -> AsyncIterator[str | ToolCall]:
         """The one method a concrete backend implements. An async generator."""
 
@@ -208,4 +270,7 @@ class StreamStats:
         return price.cost(self.input_tokens, self.output_tokens)
 
 
-__all__ = ["BackendInfo", "BaseBackend", "Message", "StreamStats", "merge_messages"]
+__all__ = [
+    "AwaitableStream", "BackendInfo", "BaseBackend", "Message", "StreamStats",
+    "merge_messages",
+]

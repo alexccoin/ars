@@ -29,6 +29,12 @@ below).
     and this is a voice pipeline with a 200 ms first-token budget. So `low` is the default
     here and raising it is a deliberate, measured choice.
 
+    Effort is now driven per turn by `ReasoningMode`, the same policy that decides whether
+    the local model may think — see `ThinkPolicy`. One knob, two providers: a spoken turn
+    gets `think: false` on Ollama and `effort: "low"` here, and neither backend has its own
+    private opinion about it. Adaptive thinking on Claude cannot be switched off entirely,
+    so `ReasoningMode.OFF` maps to the lowest effort rather than to nothing.
+
 Two A.R.S-specific behaviours in this file:
 
   * `thinking_delta` is consumed and **never** emitted as reply text. Thinking is not the
@@ -51,6 +57,7 @@ from ars_protocol import Language, ToolCall, ToolSpec
 
 from ..context import Role
 from ..errors import BackendUnavailable
+from ..reasoning import ReasoningMode
 from ..tokens import PRICES, Price
 from ..toolschema import to_anthropic
 from .base import BackendInfo, BaseBackend, Message, StreamStats
@@ -139,8 +146,8 @@ class AnthropicBackend(BaseBackend):
                 })
         return wire
 
-    def payload(self, system: str, messages: list[Message],
-                tools: tuple[ToolSpec, ...]) -> dict[str, Any]:
+    def payload(self, system: str, messages: list[Message], tools: tuple[ToolSpec, ...],
+                reasoning: ReasoningMode = ReasoningMode.OFF) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": self.info.model,
             "max_tokens": self._max_tokens,
@@ -150,8 +157,9 @@ class AnthropicBackend(BaseBackend):
         }
         if self._temperature is not None:
             body["temperature"] = self._temperature
-        if self._effort:
-            body["output_config"] = {"effort": self._effort}
+        effort = reasoning.anthropic_effort or self._effort
+        if effort:
+            body["output_config"] = {"effort": effort}
         if tools:
             body["tools"] = to_anthropic(tools)
             # One tool at a time. A parallel batch cannot be shown to the user as a single
@@ -162,7 +170,7 @@ class AnthropicBackend(BaseBackend):
     # ---------------------------------------------------------------- stream
     async def stream(
         self, *, system: str, messages: list[Message], tools: tuple[ToolSpec, ...],
-        language: Language,
+        language: Language, reasoning: ReasoningMode = ReasoningMode.OFF,
     ) -> AsyncIterator[str | ToolCall]:
         if not self._api_key:
             raise BackendUnavailable("anthropic", "ANTHROPIC_API_KEY is not set")
@@ -170,6 +178,7 @@ class AnthropicBackend(BaseBackend):
         loop = asyncio.get_running_loop()
         t0 = loop.time()
         stats = StreamStats(model=self.info.model)
+        stats.extra["reasoning"] = reasoning.value
         self.last_stats = stats
         headers = {
             "x-api-key": self._api_key,
@@ -181,7 +190,8 @@ class AnthropicBackend(BaseBackend):
 
         try:
             async with self._client.stream(
-                "POST", "/v1/messages", json=self.payload(system, messages, tools),
+                "POST", "/v1/messages",
+                json=self.payload(system, messages, tools, reasoning),
                 headers=headers,
             ) as response:
                 if response.status_code >= 400:
