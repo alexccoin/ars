@@ -12,6 +12,7 @@ from .asr import (
     BilingualScript,
     FasterWhisperEngine,
     LanguageArbiter,
+    MlxWhisperEngine,
     MockAsrEngine,
     ScriptedUtterance,
 )
@@ -34,7 +35,8 @@ __version__ = "0.1.0"
 __all__ = [
     "BUDGET_P95_MS", "VOICE_OWNED", "BilingualScript", "EchoTurnHandler", "EndpointReason",
     "EndpointState", "Endpointer", "EnergyVadEngine", "FasterWhisperEngine",
-    "LanguageArbiter", "LatencyRecorder", "MockAsrEngine", "MockTtsEngine",
+    "LanguageArbiter", "LatencyRecorder", "MlxWhisperEngine", "MockAsrEngine",
+    "MockTtsEngine",
     "MockWakewordEngine", "NullSink", "OpenWakeWordEngine", "PacedSink", "PiperTtsEngine",
     "PreRollBuffer", "ScriptedUtterance", "SileroVadEngine", "Stage", "StreamingSynthesizer",
     "TurnHandler", "VoicePipeline", "VoicePipelineConfig", "WakewordEvaluation", "build_asr",

@@ -7,9 +7,11 @@ from .language import (
     constrain_probabilities,
     word_count,
 )
+from .mlx_whisper_engine import MlxWhisperEngine
 from .mock import BilingualScript, MockAsrEngine, ScriptedUtterance
 
 __all__ = [
     "BilingualScript", "FasterWhisperEngine", "LanguageArbiter", "LanguageDecision",
-    "MockAsrEngine", "ScriptedUtterance", "constrain_probabilities", "word_count",
+    "MlxWhisperEngine", "MockAsrEngine", "ScriptedUtterance", "constrain_probabilities",
+    "word_count",
 ]

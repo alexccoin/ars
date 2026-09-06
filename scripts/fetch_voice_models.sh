@@ -21,6 +21,7 @@ VENV_PY="${ARS_PYTHON:-$ROOT/.venv/bin/python}"
 # Defaults mirror ars_core.VoiceConfig. Override via the environment; do not edit them here,
 # or the code and the weights on disk will disagree.
 ASR_MODEL="${ARS_ASR_MODEL:-large-v3-turbo}"
+ASR_BACKEND="${ARS_ASR_BACKEND:-auto}"   # auto -> mlx-whisper on arm64 macOS
 WAKEWORD="${ARS_WAKEWORD:-hey_ars}"
 TTS_VOICE_EN="${ARS_TTS_VOICE_EN:-en_US-amy-medium}"
 TTS_VOICE_RO="${ARS_TTS_VOICE_RO:-ro_RO-mihai-medium}"
@@ -69,17 +70,39 @@ for path in src.glob("*"):
 print(f"copied {len(list(target.glob('*.onnx')))} onnx model(s) to {target}")
 PY
 
-  if [[ ! -f "$MODELS_DIR/wakeword/$WAKEWORD.onnx" ]]; then
+  # openWakeWord names its files `<keyword>_v0.1.onnx`; the config says `<keyword>`.
+  if ! compgen -G "$MODELS_DIR/wakeword/${WAKEWORD}*.onnx" >/dev/null; then
     warn "no model for the configured keyword '$WAKEWORD'."
-    warn "openWakeWord ships 'hey_jarvis', 'alexa', 'hey_mycroft' and friends; a custom"
-    warn "'hey_ars' has to be trained (see research/notes) or ARS_WAKEWORD set to a stock one."
-    warn "Until then the pipeline runs with ARS_WAKE_BACKEND=mock."
+    warn "Available: $(ls "$MODELS_DIR"/wakeword/*.onnx 2>/dev/null | xargs -n1 basename 2>/dev/null \
+        | sed -E 's/_v[0-9.]+\.onnx$//;s/\.onnx$//' \
+        | grep -vE '^(embedding_model|melspectrogram|silero_vad)$' | sort -u | tr '\n' ' ')"
+    warn "openWakeWord ships no 'hey_ars'; a custom keyword has to be trained (research/notes)."
+    warn "Set ARS_WAKEWORD to one of the above, or run with ARS_WAKE_BACKEND=mock."
+    warn "The engine refuses to start on an unknown keyword rather than downloading one."
   fi
 }
 
 # ---------------------------------------------------------------------------- ASR
 
-fetch_asr() {
+# mlx-whisper keeps its weights in the HuggingFace cache and resolves them by repo id, so
+# there is nothing to place in models/asr for it. This pre-pulls them so the first run works
+# offline.
+fetch_asr_mlx() {
+  log "mlx-whisper $ASR_MODEL (Apple Silicon GPU)"
+  [[ -x "$VENV_PY" ]] || die "no venv python at $VENV_PY"
+  "$VENV_PY" - "$ASR_MODEL" <<'PY' || die "mlx-whisper not installed: uv pip install -e 'services/voice[asr-mlx]'"
+import sys
+from ars_voice.asr.mlx_whisper_engine import _repo_for, DEFAULT_REPO
+from huggingface_hub import snapshot_download
+repo = _repo_for(sys.argv[1], DEFAULT_REPO)
+print(f"pulling {repo}")
+print(snapshot_download(repo_id=repo))
+PY
+  log "mlx-whisper decodes large-v3-turbo at 121 ms EN / 135 ms RO on an M5 Max"
+  log "(measured, 5.9 s and 4.8 s of speech) against the 250 ms ASR budget."
+}
+
+fetch_asr_ct2() {
   log "faster-whisper $ASR_MODEL -> $MODELS_DIR/asr"
   mkdir -p "$MODELS_DIR/asr"
   [[ -x "$VENV_PY" ]] || die "no venv python at $VENV_PY"
@@ -98,10 +121,27 @@ path = snapshot_download(repo_id=repo, local_dir=str(target / model))
 print(f"model at {path}")
 PY
   echo
-  log "ASR is int8 on CPU (CTranslate2 has no Metal backend). On an M-series laptop"
-  log "large-v3-turbo int8 decodes a short utterance in roughly 150-400 ms; measure it with"
-  log "  uv run ars-voice-latency"
-  log "and compare against the 250 ms ASR row before assuming it fits."
+  warn "faster-whisper runs on the CPU: CTranslate2 has no Metal backend. Measured on an"
+  warn "M5 Max, large-v3-turbo int8 takes 8237 ms (EN) / 8333 ms (RO) for utterances of"
+  warn "5.9 s / 4.8 s — 0.6-0.7x realtime, against a 250 ms budget. It is the portable"
+  warn "path, not the Apple Silicon one. Use ARS_ASR_BACKEND=mlx-whisper here."
+}
+
+fetch_asr() {
+  local backend="$ASR_BACKEND"
+  if [[ "$backend" == "auto" ]]; then
+    if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+      backend="mlx-whisper"
+    else
+      backend="faster-whisper"
+    fi
+  fi
+  case "$backend" in
+    mlx-whisper)    fetch_asr_mlx ;;
+    faster-whisper) fetch_asr_ct2 ;;
+    both)           fetch_asr_mlx; fetch_asr_ct2 ;;
+    *)              die "unknown ARS_ASR_BACKEND '$backend' (mlx-whisper|faster-whisper|both)" ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------- TTS
@@ -155,9 +195,11 @@ main() {
   log "done. models/ is gitignored — never commit weights."
   log "switch the pipeline onto them with:"
   echo "    export ARS_WAKE_BACKEND=openwakeword ARS_VAD_BACKEND=silero"
-  echo "    export ARS_ASR_BACKEND=faster-whisper ARS_TTS_BACKEND=piper"
+  echo "    export ARS_TTS_BACKEND=piper   # ARS_ASR_BACKEND defaults per platform"
+  log "generate the spoken fixtures the real benchmark needs (uses the Piper voices):"
+  echo "    uv run ars-voice-fixtures spoken"
   log "then re-measure, in both languages:"
-  echo "    uv run ars-voice-latency --turns 20"
+  echo "    uv run ars-voice-latency --engines real --turns 20"
   echo "    uv run ars-voice-wakeword-eval --write   # needs a real negative set first"
 }
 

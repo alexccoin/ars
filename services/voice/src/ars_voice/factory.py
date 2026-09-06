@@ -17,6 +17,7 @@ from ars_core import AsrEngine, TtsEngine, WakewordEngine
 
 from .asr.faster_whisper_engine import FasterWhisperEngine
 from .asr.language import LanguageArbiter
+from .asr.mlx_whisper_engine import MlxWhisperEngine
 from .asr.mock import MockAsrEngine, ScriptedUtterance
 from .config import VoicePipelineConfig
 from .tts.mock import MockTtsEngine, NullTtsEngine
@@ -75,7 +76,18 @@ def build_asr(config: VoicePipelineConfig, *, script=None) -> AsrEngine:
         weak_switch_confidence=cfg.language_switch_min_confidence,
         supported=config.languages,
     )
-    match cfg.backend:
+    match config.core.asr_backend:
+        case "mlx-whisper":
+            # Apple Silicon default. 121 ms EN / 135 ms RO on large-v3-turbo, measured;
+            # faster-whisper is 8.2 s for the same audio on the same machine.
+            return MlxWhisperEngine(
+                repo=cfg.mlx_repo,
+                model=config.core.asr_model,
+                dtype=cfg.mlx_dtype,
+                model_dir=cfg.model_dir,
+                partial_interval_ms=cfg.partial_interval_ms,
+                arbiter=arbiter,
+            )
         case "faster-whisper":
             return FasterWhisperEngine(
                 model=config.core.asr_model,
@@ -96,7 +108,10 @@ def build_asr(config: VoicePipelineConfig, *, script=None) -> AsrEngine:
             ]
             return MockAsrEngine(utterances, arbiter=arbiter)
         case other:
-            raise ValueError(f"unknown ASR backend {other!r} (faster-whisper|mock)")
+            raise ValueError(
+                f"unknown ASR backend {other!r} (mlx-whisper|faster-whisper|mock). "
+                "Set ARS_ASR_BACKEND."
+            )
 
 
 def build_tts(config: VoicePipelineConfig) -> TtsEngine:

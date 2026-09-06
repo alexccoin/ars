@@ -1,0 +1,9 @@
+{
+  "wake_start_ms": 500,
+  "wake_end_ms": 1498,
+  "command_start_ms": 1498,
+  "speech_end_ms": 7303,
+  "total_ms": 8803,
+  "expected_text": "Good morning. I found three new messages from the bank. Would you like me to read them?",
+  "expected_language": "en"
+}

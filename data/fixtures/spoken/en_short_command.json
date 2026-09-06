@@ -1,0 +1,9 @@
+{
+  "wake_start_ms": 500,
+  "wake_end_ms": 1568,
+  "command_start_ms": 1568,
+  "speech_end_ms": 3773,
+  "total_ms": 5273,
+  "expected_text": "Turn the lights off in the kitchen.",
+  "expected_language": "en"
+}

@@ -17,12 +17,14 @@ dependencies = [
 [project.optional-dependencies]
 wakeword = ["openwakeword>=0.6"]
 asr = ["faster-whisper>=1.1"]
+asr-mlx = ["mlx>=0.20", "mlx-whisper>=0.4"]  # Apple Silicon only
 vad = ["silero-vad>=5.1", "onnxruntime>=1.19"]
 tts = ["piper-tts>=1.2"]
 io = ["sounddevice>=0.5"]
 all = [
     "openwakeword>=0.6",
     "faster-whisper>=1.1",
+    "mlx-whisper>=0.4; platform_machine == 'arm64' and sys_platform == 'darwin'",
     "silero-vad>=5.1",
     "onnxruntime>=1.19",
     "piper-tts>=1.2",

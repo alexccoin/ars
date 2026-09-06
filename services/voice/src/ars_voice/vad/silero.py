@@ -39,6 +39,7 @@ class SileroVadEngine(FrameVadEngine):
         self.threshold = threshold
         self._model_dir = Path(model_dir)
         self._model = None
+        self._to_tensor = None
         self._buffer = np.zeros(0, dtype=np.float32)
         self._last_probability = 0.0
 
@@ -51,16 +52,27 @@ class SileroVadEngine(FrameVadEngine):
 
     def _load_model(self):
         try:
+            import torch
             from silero_vad import load_silero_vad
+            from silero_vad.utils_vad import OnnxWrapper
         except ImportError as exc:
             raise RuntimeError(
                 "SileroVadEngine needs the 'vad' extra: uv pip install -e 'services/voice[vad]'. "
                 "The energy VAD is the supported no-weights fallback."
             ) from exc
+
+        # Even in ONNX mode the wrapper calls `x.dim()`, so the window has to arrive as a
+        # torch tensor, not the numpy array every other engine here takes.
+        self._to_tensor = torch.from_numpy
+
         local = self._model_dir / "silero_vad.onnx"
         if local.is_file():
+            # Load the copy scripts/fetch_voice_models.sh put in models/, not the one bundled
+            # in the wheel: the reference deployment is offline and pins its own weights.
+            # `load_silero_vad` grew no path argument in silero-vad 6.x, so go to the wrapper
+            # it uses internally.
             log.info("loading silero VAD from %s", local)
-            return load_silero_vad(onnx=True, path=str(local))
+            return OnnxWrapper(str(local), force_onnx_cpu=True)
         log.info("loading silero VAD from package defaults")
         return load_silero_vad(onnx=True)
 
@@ -71,7 +83,8 @@ class SileroVadEngine(FrameVadEngine):
         while self._buffer.size >= SILERO_WINDOW_SAMPLES:
             window = self._buffer[:SILERO_WINDOW_SAMPLES]
             self._buffer = self._buffer[SILERO_WINDOW_SAMPLES:]
-            self._last_probability = float(self._model(window, SAMPLE_RATE_HZ).item())
+            tensor = self._to_tensor(np.ascontiguousarray(window))
+            self._last_probability = float(self._model(tensor, SAMPLE_RATE_HZ).item())
         # Rescale around the configured threshold so FrameVadEngine's 0.5 cut is honoured.
         if self.threshold <= 0:
             return 1.0

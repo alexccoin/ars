@@ -102,6 +102,13 @@ class WakewordConfig(BaseSettings):
     """Minimum gap between two detections. One utterance of 'hey A.R.S' crosses threshold
     on several consecutive frames; without this it fires three times."""
 
+    strip_from_transcript: bool = True
+    """Drop the wake phrase from the start of the final transcript.
+
+    The pre-roll deliberately contains the tail of the keyword, so ASR transcribes it. On by
+    default: without it every turn arrives at the reasoning layer with a stray vocative
+    ("Jarvis, good morning..."), which then also ends up in memory."""
+
     model_dir: Path = Path("./models/wakeword")
     benchmark_dir: Path = Path("./research/benchmarks/wakeword")
     """Where the measured FA/hour lives. No file, no number — see WakewordEvaluation."""
@@ -110,11 +117,18 @@ class WakewordConfig(BaseSettings):
 class AsrConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ARS_ASR_", env_file=".env", extra="ignore")
 
-    backend: str = "mock"
-    """'faster-whisper' (needs models/asr) or 'mock'."""
+    # The backend name is NOT declared here: it lives in `ars_core.VoiceConfig.asr_backend`
+    # and is reached through `VoicePipelineConfig.core`. Two fields bound to the same
+    # ARS_ASR_BACKEND environment variable is the "type defined twice" defect from
+    # CLAUDE.md #1, and it fails in the worst way — quietly, with the loser's default.
 
     model_dir: Path = Path("./models/asr")
+    mlx_repo: str = "mlx-community/whisper-large-v3-turbo"
+    """Overrides the repo derived from `core.asr_model`, for a fine-tuned local checkpoint."""
+
+    mlx_dtype: str = "float16"
     device: str = "auto"
+    """faster-whisper only."""
     beam_size_partial: int = 1
     beam_size_final: int = 5
     partial_interval_ms: int = Field(default=480, ge=FRAME_MS)
@@ -143,9 +157,24 @@ class TtsConfig(BaseSettings):
     chunk_ms: int = Field(default=120, ge=FRAME_MS)
     """Synthesis chunk size. Also the granularity at which cancel() is observed."""
 
-    first_sentence_max_chars: int = Field(default=140, ge=20)
+    first_sentence_max_chars: int = Field(default=90, ge=20)
     """Emit at the first sentence boundary, or this many characters, whichever comes first.
-    A reply whose first sentence is a paragraph must not hold time-to-first-audio hostage."""
+
+    This is a latency knob, not a formatting one. Piper renders a whole sentence before it
+    emits a single sample, so time-to-first-audio scales with the length of the first
+    sentence — measured at roughly 0.9 ms per character, on both voices:
+
+    | first sentence | EN | RO |
+    |---:|---:|---:|
+    | 60 chars | 56 ms | 60 ms |
+    | 80 chars | 74 ms | 73 ms |
+    | 100 chars | 92 ms | 96 ms |
+    | 140 chars | 119 ms | 124 ms |
+
+    The budget is 120 ms, so the old 140-char default sat on top of it (128-132 ms measured
+    end to end through the streaming synthesiser) and went over on a busy machine. 90 chars
+    lands at ~85 ms with headroom. It only bites when the first sentence has no boundary
+    inside 90 characters; a normal short opening sentence is emitted whole, unchanged."""
 
     speaker_sample_rate_hz: int = SAMPLE_RATE_HZ
 
@@ -179,6 +208,13 @@ class VoicePipelineConfig(BaseSettings):
     asr: AsrConfig = Field(default_factory=AsrConfig)
     tts: TtsConfig = Field(default_factory=TtsConfig)
     barge_in: BargeInConfig = Field(default_factory=BargeInConfig)
+
+    warm_up_on_start: bool = True
+    """Load every model before `VoicePipeline.run` consumes its first frame.
+
+    On by default: a cold Piper voice is ~355 ms and a cold whisper decode ~500 ms, and both
+    land inside the user's first turn otherwise. Turn it off only where startup latency
+    matters more than first-turn latency (a test, or a CLI that exits immediately)."""
 
     fixtures_dir: Path = Path("./data/fixtures")
     languages: tuple[Language, ...] = (Language.EN, Language.RO)

@@ -1,0 +1,9 @@
+{
+  "wake_start_ms": 500,
+  "wake_end_ms": 1556,
+  "command_start_ms": 1556,
+  "speech_end_ms": 6246,
+  "total_ms": 7746,
+  "expected_text": "Bună dimineața! Am găsit 3 mesaje noi de la bancă. Vrei să ți le citesc?",
+  "expected_language": "ro"
+}

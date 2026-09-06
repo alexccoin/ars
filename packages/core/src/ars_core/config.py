@@ -3,6 +3,7 @@ no API keys, no network, and no accounts. Cloud is opt-in, always."""
 
 from __future__ import annotations
 
+import platform
 from pathlib import Path
 
 from ars_protocol import Language
@@ -16,12 +17,30 @@ class VoiceConfig(BaseSettings):
     wakeword: str = "hey_ars"
     wakeword_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     asr_model: str = "large-v3-turbo"
+    asr_backend: str = Field(default_factory=lambda: default_asr_backend())
+    """Which ASR implementation runs. Declared here, not in the voice service, because the
+    deployment shape depends on it: a home node and a phone do not make the same choice.
+
+    Defaults to `mlx-whisper` on Apple Silicon and `faster-whisper` everywhere else. That is
+    not a preference, it is a measurement: CTranslate2 has no Metal backend, so on an M-series
+    machine faster-whisper decodes large-v3-turbo on the CPU at 0.6-0.7x realtime — 8.2 s for
+    a 5.9 s utterance against a 250 ms budget — while mlx-whisper does the same work on the
+    GPU in 121 ms. Off Apple Silicon, faster-whisper is the portable path and stays the
+    default."""
     asr_compute_type: str = "int8"
+    """faster-whisper only. mlx-whisper carries its own dtype (float16 on Metal)."""
     endpoint_silence_ms: int = Field(default=700, ge=200, le=3000)
     """Silence before an utterance is considered finished. Too low interrupts the user
     mid-thought, which is worse than waiting. Tune against fixtures, never by feel."""
     tts_voice_en: str = "en_US-amy-medium"
     tts_voice_ro: str = "ro_RO-mihai-medium"
+
+
+def default_asr_backend() -> str:
+    """Apple Silicon gets the GPU backend; everything else gets the portable one."""
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        return "mlx-whisper"
+    return "faster-whisper"
 
 
 class LlmConfig(BaseSettings):

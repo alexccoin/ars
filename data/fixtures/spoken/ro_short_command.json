@@ -1,0 +1,9 @@
+{
+  "wake_start_ms": 500,
+  "wake_end_ms": 1510,
+  "command_start_ms": 1510,
+  "speech_end_ms": 3286,
+  "total_ms": 4786,
+  "expected_text": "Stinge lumina din bucătărie.",
+  "expected_language": "ro"
+}

@@ -252,6 +252,16 @@ class LatencyRecorder:
         rows = self.report(stages=VOICE_OWNED if voice_only else None)
         return [r for r in rows if r.within_budget is False]
 
+    def unmeasured(self, *, voice_only: bool = True) -> list[Stage]:
+        """Budgeted stages with no samples at all.
+
+        Reported separately from breaches because "nothing was measured" and "everything
+        passed" look identical otherwise, and the first one is how a broken benchmark
+        announces success.
+        """
+        stages = VOICE_OWNED if voice_only else tuple(Stage)
+        return [s for s in stages if BUDGET_P95_MS[s] is not None and not self._samples.get(s)]
+
     def format_report(self, *, voice_only: bool = False) -> str:
         rows = self.report(stages=VOICE_OWNED if voice_only else None)
         if not rows:

@@ -54,7 +54,13 @@ from .handler import EchoTurnHandler, TurnHandler
 from .metrics import EngineCounters, LatencyRecorder, TurnLatency
 from .tts.streaming import StreamingSynthesizer
 from .vad.base import FrameVadEngine
-from .vad.endpointing import Endpointer, EndpointReason, endpointer_from_config
+from .vad.endpointing import (
+    Endpointer,
+    EndpointReason,
+    EndpointState,
+    endpointer_from_config,
+)
+from .wakeword.prefix import strip_wakeword_prefix
 
 log = logging.getLogger(__name__)
 
@@ -118,10 +124,73 @@ class VoicePipeline:
         self._barge_in_speech_ms = 0.0
         self._interrupt_requested = False
         self._expected_seq: int | None = None
+        self._speech_active = True
+        self._turn_began_with_wake = False
         self._spoken_text = ""
         self._asr_seq = 0
+        self._warmed = False
+        self.warm_up_ms: dict[str, float] = {}
 
     # ------------------------------------------------------------------ public
+
+    async def warm_up(self) -> dict[str, float]:
+        """Load every model before the first turn, and report what each cost.
+
+        Idempotent. Called automatically by `run()`; call it earlier if the client can show
+        a "starting up" state, because it takes seconds and it consumes no audio while it
+        runs.
+
+        This is not tidiness. Measured on this machine: a Piper voice costs ~355 ms to load
+        and ~25 ms to prime, against a 120 ms time-to-first-audio budget — and it is per
+        voice, so a bilingual household blows the budget once in English and again in
+        Romanian. mlx-whisper's first decode after a cold load is ~500 ms against ~130 ms
+        warm. Every one of those milliseconds lands inside a real user's first turn unless
+        it is paid here.
+        """
+        if self._warmed:
+            return self.warm_up_ms
+        timings: dict[str, float] = {}
+
+        for name in ("wakeword", "vad", "asr", "tts"):
+            engine = getattr(self, name)
+            start = LatencyRecorder.mark()
+            try:
+                if name == "vad":
+                    await self._prepare_vad()
+                else:
+                    await self._warm_engine(engine)
+            except Exception as exc:
+                # A warm-up failure is reported, not fatal: the engine may still work on
+                # first use, and refusing to start the pipeline over it would be worse.
+                log.warning("%s warm-up failed: %s", name, exc)
+                await self._emit(
+                    ErrorEvent(code="voice.warmup_failed", message=f"{name}: {exc}")
+                )
+            timings[name] = LatencyRecorder.mark() - start
+
+        self._warmed = True
+        self.warm_up_ms = timings
+        log.info(
+            "voice warm: %s", ", ".join(f"{k}={v:.0f} ms" for k, v in timings.items())
+        )
+        return timings
+
+    async def _warm_engine(self, engine: object) -> None:
+        """Best effort, duck-typed. `warm_up`/`load`/`prepare` are voice-internal extensions;
+        the `packages/core` interfaces deliberately do not require them, so an engine that
+        has none is simply not warmed."""
+        warm = getattr(engine, "warm_up", None)
+        if callable(warm):
+            result = warm(self.config.languages) if engine is self.tts else warm()
+            await result if asyncio.iscoroutine(result) else None
+            return
+        for attribute in ("load", "prepare", "_load"):
+            hook = getattr(engine, attribute, None)
+            if callable(hook):
+                result = hook()
+                if asyncio.iscoroutine(result):
+                    await result
+                return
 
     async def run(self, frames: AsyncIterator[AudioFrame]) -> AsyncIterator[ServerEvent]:
         """Drive the pipeline over an audio stream, yielding protocol events.
@@ -129,6 +198,9 @@ class VoicePipeline:
         The caller (the gateway) forwards these to the client verbatim; nothing in here
         invents a message type that is not in `ars_protocol.events`.
         """
+        if self.config.warm_up_on_start:
+            await self.warm_up()
+        self._reset_stream_state()
         pump = asyncio.create_task(self._pump(frames), name="voice-pump")
         try:
             while True:
@@ -141,6 +213,29 @@ class VoicePipeline:
             with contextlib.suppress(asyncio.CancelledError):
                 await pump
             await self._teardown()
+
+    def _reset_stream_state(self) -> None:
+        """Start a stream from a known state.
+
+        A `VoicePipeline` outlives one audio stream — a client reconnects, a benchmark
+        replays a fixture — and reloading the models per stream is not an option at 1.6 GB.
+        So the per-stream state is cleared here instead. Leaving `self.state` at whatever the
+        last stream ended on is how a failed turn poisons every turn after it.
+        """
+        self.state = AgentState.IDLE
+        self.turn = None
+        self.turn_latency = None
+        self.transcripts.clear()
+        self._recent.clear()
+        self._pending_wake = None
+        self._expected_seq = None
+        self._barge_in_speech_ms = 0.0
+        self._speech_active = True
+        self._turn_began_with_wake = False
+        self._asr_seq = 0
+        self._spoken_text = ""
+        self.endpointer.reset()
+        self.vad.reset()
 
     async def interrupt(self, reason: str = "user_cancel") -> None:
         """Client-initiated interrupt (`ars_protocol.Interrupt`). Same path as barge-in."""
@@ -238,8 +333,45 @@ class VoicePipeline:
         await self._emit(WakeDetected(event=event))
 
         pre_roll = self._pre_roll_for(event)
+        self._turn_began_with_wake = True
         await self._enter(AgentState.LISTENING)
         await self._open_asr(pre_roll)
+
+    async def _prepare_vad(self) -> None:
+        """Load the VAD, and fall back to the energy VAD if it will not load.
+
+        Losing voice entirely because an ONNX runtime would not start is a much worse outcome
+        than endpointing on energy for this session. The fallback is a complete engine, not a
+        stub, which is the whole reason it exists — and the user is told, because silently
+        degrading the thing that decides when they have finished speaking is not honest.
+        """
+        try:
+            await self.vad.prepare()
+        except Exception as exc:
+            from .vad.energy import EnergyVadEngine
+
+            log.warning("VAD failed to load (%s); falling back to the energy VAD", exc)
+            await self._emit(
+                ErrorEvent(
+                    code="voice.vad_degraded",
+                    message=f"{type(self.vad).__name__} unavailable ({exc}); using energy VAD",
+                )
+            )
+            self.vad = EnergyVadEngine(
+                threshold_db=self.config.vad.energy_threshold_db,
+                adaptive=self.config.vad.energy_adaptive,
+                noise_margin_db=self.config.vad.energy_noise_margin_db,
+                noise_floor_halflife_ms=self.config.vad.energy_noise_floor_halflife_ms,
+            )
+            await self.vad.prepare()
+
+    def _notify_speech_active(self, active: bool) -> None:
+        if active == self._speech_active:
+            return
+        self._speech_active = active
+        notify = getattr(self.asr, "set_speech_active", None)
+        if callable(notify):
+            notify(active)
 
     def _pre_roll_for(self, event: WakeEvent) -> tuple[AudioFrame, ...]:
         """The audio from before the wakeword fired.
@@ -258,8 +390,10 @@ class VoicePipeline:
     async def _open_asr(self, pre_roll: tuple[AudioFrame, ...]) -> None:
         self.endpointer.reset()
         self.vad.reset()
-        await self.vad.prepare()
+        await self._prepare_vad()
         self._asr_channel = FrameChannel()
+        self._speech_active = True
+        self._notify_speech_active(True)
         self._final = asyncio.get_running_loop().create_future()
         self._asr_task = asyncio.create_task(self._consume_asr(), name="voice-asr")
 
@@ -300,7 +434,13 @@ class VoicePipeline:
                 self._final.set_exception(exc)
 
     async def _listen(self, frame: AudioFrame) -> None:
-        assert self._asr_channel is not None
+        if self._asr_channel is None:
+            # Only reachable if opening the utterance failed part-way. An assert here would
+            # kill the pump and take the session with it; going back to idle costs the user
+            # one repeat of the wakeword.
+            log.warning("listening with no ASR channel; returning to idle")
+            await self._abandon_turn()
+            return
         step = self.vad.step(frame)
         if step.event is not None:
             await self._emit(VoiceActivity(event=step.event))
@@ -313,9 +453,20 @@ class VoicePipeline:
         # Raw, not smoothed: see VadStep.raw_is_speech. Stacking the VAD hangover on the
         # endpoint silence window costs ~200 ms on every single turn.
         decision = self.endpointer.update(step.raw_is_speech, frame_duration_ms(frame))
+        if decision.changed:
+            # Tell ASR whether the user is still talking. During trailing silence a partial
+            # decode is 100 ms of GPU spent on a screen update nobody will read, landing
+            # directly on top of the final decode that the ASR budget is measured on.
+            self._notify_speech_active(decision.state is EndpointState.SPEECH)
         if decision.speech_just_ended and self.turn_latency is not None:
-            # The endpointing budget is measured from here: the frame where the user stopped.
-            self.turn_latency.speech_end_ms = LatencyRecorder.mark()
+            # The endpointing budget is measured from the moment the user stopped, which is
+            # the *start* of this frame — the endpointer has already counted its whole
+            # duration into the silence window by the time we get here. Marking "now" instead
+            # under-reports by one frame (20 ms) and quietly makes the row look better than
+            # the user's experience.
+            self.turn_latency.speech_end_ms = (
+                LatencyRecorder.mark() - frame_duration_ms(frame)
+            )
         if decision.hesitation_extended and decision.speech_just_ended:
             self.counters.hesitation_extensions += 1
 
@@ -353,6 +504,7 @@ class VoicePipeline:
             await self._abandon_turn()
             return
 
+        transcript = self._strip_wakeword(transcript)
         self.counters.utterances += 1
         self.transcripts.append(transcript)
         assert self.turn is not None
@@ -360,6 +512,23 @@ class VoicePipeline:
         self._turn_task = asyncio.create_task(self._run_turn(transcript), name="voice-turn")
 
     # ------------------------------------------------------------------ reply
+
+    def _strip_wakeword(self, transcript: Transcript) -> Transcript:
+        """Remove the keyword the pre-roll dragged in. Only for wake-initiated turns.
+
+        A turn that began as a barge-in has no wake phrase in front of it, and stripping
+        there would eat a real first word.
+        """
+        if not self.config.wakeword.strip_from_transcript or not self._turn_began_with_wake:
+            return transcript
+        cleaned = strip_wakeword_prefix(transcript.text, self.config.core.wakeword)
+        if cleaned == transcript.text:
+            return transcript
+        log.debug("stripped wake phrase: %r -> %r", transcript.text, cleaned)
+        self.counters.extra["wakeword_prefix_stripped"] = (
+            self.counters.extra.get("wakeword_prefix_stripped", 0) + 1
+        )
+        return transcript.model_copy(update={"text": cleaned})
 
     async def _run_turn(self, transcript: Transcript) -> None:
         assert self.turn is not None
@@ -487,6 +656,7 @@ class VoicePipeline:
             self.turn_latency = self.latency.start_turn(self.turn.id)
             self.turn_latency.wake_audio_ms = LatencyRecorder.mark()
             self.turn_latency.wake_detected_ms = self.turn_latency.wake_audio_ms
+            self._turn_began_with_wake = False
             await self._enter(AgentState.LISTENING)
             await self._open_asr(pre_roll)
         else:

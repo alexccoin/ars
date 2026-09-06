@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 import wave
 from collections.abc import AsyncIterator, Iterable, Sequence
 from pathlib import Path
@@ -30,15 +31,33 @@ async def frames_from_iterable(
 ) -> AsyncIterator[AudioFrame]:
     """Replay a fixed frame list.
 
-    `realtime=True` paces at wall-clock frame duration, which is what makes a mock-engine
-    latency measurement mean anything: without pacing you measure how fast Python can loop,
-    not how long the user waits.
+    `realtime=True` paces at wall-clock frame duration, which is what makes a latency
+    measurement mean anything: without pacing you measure how fast Python can loop, not how
+    long the user waits.
+
+    Paced against an absolute schedule, not by sleeping FRAME_MS between frames.
+    `asyncio.sleep` overshoots by a fraction of a millisecond, and sleeping per frame
+    accumulates that: over the 35 frames of a 700 ms silence window it added ~35 ms of drift
+    under load and showed up as endpointing latency that was not there. A real capture device
+    delivers frames on a hardware clock and does not drift, so a harness that does is
+    measuring itself.
     """
-    delay = (FRAME_MS / 1000.0) / max(speed, 0.001)
-    for frame in frames:
-        if realtime:
-            await asyncio.sleep(delay)
+    if not realtime:
+        for frame in frames:
+            await asyncio.sleep(0)
+            yield frame
+        return
+
+    interval = (FRAME_MS / 1000.0) / max(speed, 0.001)
+    start = time.perf_counter()
+    for index, frame in enumerate(frames):
+        deadline = start + (index + 1) * interval
+        remaining = deadline - time.perf_counter()
+        if remaining > 0:
+            await asyncio.sleep(remaining)
         else:
+            # Behind schedule: yield to the loop but do not sleep the debt away, or the
+            # stream silently slows down and every downstream duration inherits the lag.
             await asyncio.sleep(0)
         yield frame
 

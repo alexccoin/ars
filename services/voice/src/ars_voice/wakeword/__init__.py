@@ -11,9 +11,10 @@ from .evaluation import (
 )
 from .mock import MockWakewordEngine, NullWakewordEngine
 from .openwakeword_engine import OpenWakeWordEngine
+from .prefix import spoken_forms, strip_wakeword_prefix
 
 __all__ = [
     "NOT_EVALUATED", "BufferedWakewordEngine", "MockWakewordEngine", "NotEvaluatedError",
     "NullWakewordEngine", "OpenWakeWordEngine", "WakewordEvaluation", "format_evaluation",
-    "load_evaluation", "save_evaluation",
+    "load_evaluation", "save_evaluation", "spoken_forms", "strip_wakeword_prefix",
 ]

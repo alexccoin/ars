@@ -199,6 +199,69 @@ async def test_latency_recorder_populates_the_voice_owned_budget_rows():
     assert "endpointing" in pipeline.latency_report()
 
 
+async def test_the_wake_phrase_is_stripped_from_the_final_transcript():
+    """The pre-roll deliberately contains the tail of the keyword, so ASR transcribes it.
+    Measured on the real pipeline: "Jarvis, good morning, I found three new messages..."."""
+    config = VoicePipelineConfig()
+    config.core.wakeword = "hey_jarvis"
+    pipeline = build(
+        script=[
+            ScriptedUtterance(
+                "Jarvis, turn the lights off in the kitchen", Language.EN, 0.94
+            )
+        ],
+        config=config,
+    )
+    events = [e async for e in pipeline.run(feed(turn_audio()))]
+    final = next(
+        e.transcript for e in events if e.type == "transcript" and e.transcript.is_final
+    )
+    assert final.text == "Turn the lights off in the kitchen"
+    assert pipeline.counters.extra["wakeword_prefix_stripped"] == 1
+
+
+async def test_a_barge_in_utterance_keeps_its_first_word():
+    """No wake phrase precedes a barge-in, so stripping there would eat a real first word."""
+    handler = BlockingHandler()
+    config = VoicePipelineConfig()
+    config.core.wakeword = "hey_jarvis"
+    pipeline = build(
+        script=[
+            ScriptedUtterance("Jarvis, turn the lights off", Language.EN, 0.94),
+            ScriptedUtterance("Jarvis is not what I said", Language.EN, 0.9),
+        ],
+        handler=handler,
+        config=config,
+        tts=MockTtsEngine(chunk_ms=120, realtime_factor=3.0),
+    )
+    speaking = asyncio.Event()
+    finals = []
+    async for event in pipeline.run(barge_in_audio(speaking)):
+        if event.type == "audio_out" and event.chunk.pcm and not speaking.is_set():
+            speaking.set()
+        if event.type == "transcript" and event.transcript.is_final:
+            finals.append(event.transcript)
+
+    assert len(finals) == 2
+    assert finals[0].text == "Turn the lights off", "wake turn should be stripped"
+    assert finals[1].text == "Jarvis is not what I said", "barge-in turn must not be stripped"
+
+
+async def test_stripping_can_be_turned_off():
+    config = VoicePipelineConfig()
+    config.core.wakeword = "hey_jarvis"
+    config.wakeword.strip_from_transcript = False
+    pipeline = build(
+        script=[ScriptedUtterance("Jarvis, turn the lights off", Language.EN, 0.94)],
+        config=config,
+    )
+    events = [e async for e in pipeline.run(feed(turn_audio()))]
+    final = next(
+        e.transcript for e in events if e.type == "transcript" and e.transcript.is_final
+    )
+    assert final.text == "Jarvis, turn the lights off"
+
+
 # --------------------------------------------------------------------------- barge-in
 
 class BlockingHandler(TurnHandler):

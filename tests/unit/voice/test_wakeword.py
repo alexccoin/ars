@@ -22,6 +22,7 @@ from ars_voice.wakeword.evaluation import (
     save_evaluation,
 )
 from ars_voice.wakeword.mock import MockWakewordEngine, NullWakewordEngine
+from ars_voice.wakeword.prefix import spoken_forms, strip_wakeword_prefix
 from voice_helpers import keyword, silence, speech, stream
 
 
@@ -166,3 +167,51 @@ def test_inference_window_must_be_a_multiple_of_the_protocol_frame():
     with pytest.raises(ValueError, match="FRAME_MS"):
         MockWakewordEngine(inference_window_ms=FRAME_MS * 2 + 1)
     assert BYTES_PER_FRAME > 0
+
+
+# --------------------------------------------------------------------------- wake phrase
+
+def test_spoken_forms_covers_the_carrier_word_and_the_name_alone():
+    """openWakeWord fires at the *end* of the keyword, so a 500 ms pre-roll often catches only
+    "Jarvis" — the transcript has to be cleaned of both spellings, longest first."""
+    assert spoken_forms("hey_jarvis") == ("hey jarvis", "jarvis")
+    assert spoken_forms("alexa") == ("alexa",)
+    assert spoken_forms("hey_ars") == ("hey ars", "ars")
+    assert spoken_forms("") == ()
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # The real transcript this was written for, measured on data/fixtures/spoken.
+        (
+            "Jarvis, good morning, I found three new messages from the bank.",
+            "Good morning, I found three new messages from the bank.",
+        ),
+        ("Hey Jarvis, turn the lights off.", "Turn the lights off."),
+        ("hey jarvis stinge lumina din bucătărie", "Stinge lumina din bucătărie"),
+        ("Jarvis Bună dimineața!", "Bună dimineața!"),
+    ],
+)
+def test_the_wake_phrase_is_stripped_from_the_front(text: str, expected: str):
+    assert strip_wakeword_prefix(text, "hey_jarvis") == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Remind me to call Jarvis about the invoice.",
+        "Bună dimineața! Am găsit 3 mesaje noi de la bancă.",
+        "Turn the lights off.",
+        "",
+    ],
+)
+def test_only_a_leading_wake_phrase_is_touched(text: str):
+    assert strip_wakeword_prefix(text, "hey_jarvis") == text
+
+
+def test_a_bare_wake_phrase_is_kept():
+    """"Hey Jarvis" on its own is a real turn — the answer is "yes?". Returning an empty
+    string would look like a failed transcription and get dropped."""
+    assert strip_wakeword_prefix("Hey Jarvis", "hey_jarvis") == "Hey Jarvis"
+    assert strip_wakeword_prefix("Jarvis.", "hey_jarvis") == "Jarvis."
