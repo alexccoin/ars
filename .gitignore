@@ -15,13 +15,14 @@ build/
 .next/
 *.tsbuildinfo
 
-# Models & data — never commit weights or user data
-models/**/*.bin
-models/**/*.onnx
-models/**/*.gguf
-models/**/*.pt
-models/**/*.safetensors
-models/**/weights/
+# Models — never commit weights (CLAUDE.md non-negotiable #8).
+# Ignore everything under models/ and allow back only documentation. Listing weight
+# EXTENSIONS is not enough: a whisper checkout also carries tokenizer.json,
+# vocabulary.json and .tflite, and Piper carries .onnx.json — none of which match a
+# weights glob, and all of which would have been committed. Populate models/ with
+# scripts/fetch_voice_models.sh.
+models/*
+!models/README.md
 data/datasets/**/raw/
 *.wav
 *.mp3
