@@ -1,0 +1,565 @@
+/* ==========================================================================
+   A.R.S — visual system
+   services/gateway/src/ars_gateway/ui/theme.css
+
+   The whole HUD is built from the tokens in this file. If you are writing a
+   panel and you are about to type a hex value, a px shadow, or a bezier — stop,
+   it is already here under a name. If it genuinely is not, add it *here* so the
+   next panel gets it too.
+
+   Contract with the entity renderer:
+     entity/ars-entity.js reads --ars-entity-* at construction and on
+     `ars.refreshTheme()`. Change a tier colour here and the being changes with
+     it. Never hardcode the being's colours in JS.
+
+   Contrast: every pairing this file intends you to use is measured (WCAG 2.1,
+   sRGB) and stated inline. Body text pairings clear 4.5:1, UI/border and
+   large-text pairings clear 3:1. A sci-fi HUD you cannot read is a failed HUD.
+
+   Themes:
+     default            dark ("hull") — the intended look
+     [data-theme=light] light fallback — daylight/accessibility, not broken
+     [data-theme=dark]  forces dark regardless of OS
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------------------------------------------------------------------
+     1. PRIMITIVES — raw ramps. Do not reference these in components; use the
+        semantic aliases in section 2. They exist so the ramp can be retuned.
+     --------------------------------------------------------------------- */
+
+  /* Hull: the machined dark greys the whole interface sits on. Blue-cast,
+     never neutral — neutral grey reads as "app", blue-black reads as "craft". */
+  --ars-void:      #04070C;   /* behind everything, the vacuum */
+  --ars-hull-0:    #070C13;   /* window chrome, rails, the deepest wells */
+  --ars-hull-1:    #0B121C;   /* default panel */
+  --ars-hull-2:    #111B27;   /* raised panel, input field */
+  --ars-hull-3:    #182533;   /* hover / selected row */
+  --ars-hull-4:    #21313F;   /* pressed, or a filled chip */
+
+  /* Structure */
+  --ars-line:      #24384A;   /* hairline bezel        1.56:1 on hull-1 (decorative) */
+  --ars-line-hi:   #4A7592;   /* active bezel / focus  3.80:1 on hull-1, 3.97:1 on hull-0, 3.15:1 on hull-3 */
+
+  /* Ink */
+  --ars-ink:       #DDEBF4;   /* 15.45:1 on hull-1 · 16.12:1 on hull-0 · 14.27:1 on hull-2 · 12.78:1 on hull-3 */
+  --ars-ink-dim:   #A3BACA;   /*  9.34:1 on hull-1 ·  8.62:1 on hull-2 */
+  --ars-ink-mute:  #7A94A6;   /*  5.92:1 on hull-1 ·  6.18:1 on hull-0 — fine for body too, generous headroom */
+
+  /* Cyan — A.R.S's own colour. 400 is the one you use for text. */
+  --ars-cyan-100:  #E8FCFF;
+  --ars-cyan-200:  #B6F4FF;
+  --ars-cyan-300:  #86EDFF;
+  --ars-cyan-400:  #5EE6FF;   /* 12.74:1 on hull-1 · 13.29:1 on hull-0 */
+  --ars-cyan-500:  #22D3F0;   /* 10.42:1 on hull-1 ·  9.62:1 on hull-2 */
+  --ars-cyan-600:  #0FA9C8;
+  --ars-cyan-700:  #0A7E96;
+  --ars-cyan-800:  #075A6C;
+  --ars-cyan-900:  #052F3A;
+
+  /* Tier hues — cold to warm as cost and exposure rise. This ramp is semantic:
+     ice is free and instant, amber left the device. Do not reorder for taste. */
+  --ars-ice:       #9FEEFF;   /* 14.45:1 on hull-1 */
+  --ars-teal:      #3FDCA0;   /* 10.70:1 on hull-1 */
+  --ars-violet:    #B08CFF;   /*  7.20:1 on hull-1 */
+  --ars-amber:     #FFB23F;   /* 10.46:1 on hull-1 */
+
+  /* Alarm */
+  --ars-red:       #FF5C6B;   /*  6.26:1 on hull-1 ·  6.53:1 on hull-0 */
+  --ars-red-deep:  #C4142B;   /* fill; ink on it 4.96:1 · as a border on hull-1 3.12:1 */
+
+  /* ---------------------------------------------------------------------
+     2. SEMANTIC — what components actually reference.
+     --------------------------------------------------------------------- */
+
+  --ars-bg:              var(--ars-void);
+  --ars-bg-chrome:       var(--ars-hull-0);
+  --ars-surface:         var(--ars-hull-1);
+  --ars-surface-raised:  var(--ars-hull-2);
+  --ars-surface-hover:   var(--ars-hull-3);
+  --ars-surface-active:  var(--ars-hull-4);
+  --ars-surface-sunken:  #060A10;
+
+  --ars-border:          var(--ars-line);
+  --ars-border-strong:   var(--ars-line-hi);
+  --ars-border-accent:   color-mix(in srgb, var(--ars-cyan-500) 55%, transparent);
+
+  --ars-text:            var(--ars-ink);       /* body            15.45:1 on surface */
+  --ars-text-secondary:  var(--ars-ink-dim);   /* supporting       9.34:1 on surface */
+  --ars-text-muted:      var(--ars-ink-mute);  /* labels, meta     5.92:1 on surface */
+  --ars-text-accent:     var(--ars-cyan-400);  /* links, values   12.74:1 on surface */
+  --ars-text-on-accent:  var(--ars-hull-0);    /* ink on a cyan/teal/amber fill, 10.9–13.3:1 */
+  --ars-text-on-danger:  var(--ars-ink);       /* ink on red-deep fill, 4.96:1 */
+
+  --ars-accent:          var(--ars-cyan-500);
+  --ars-accent-bright:   var(--ars-cyan-400);
+  --ars-accent-deep:     var(--ars-cyan-700);
+
+  /* Status. Text-safe on surface at the ratios noted in section 1. */
+  --ars-ok:              var(--ars-teal);      /* 10.70:1 */
+  --ars-warn:            var(--ars-amber);     /* 10.46:1 */
+  --ars-danger:          var(--ars-red);       /*  6.26:1 */
+  --ars-danger-fill:     var(--ars-red-deep);
+  --ars-info:            var(--ars-cyan-400);  /* 12.74:1 */
+
+  /* Trust — mirrors TrustLevel in packages/protocol. External content is
+     visibly quarantined; that is a security control, not decoration. */
+  --ars-trust-user:      var(--ars-cyan-400);  /* 12.74:1 on surface */
+  --ars-trust-system:    var(--ars-ice);       /* 14.45:1 */
+  --ars-trust-external:  var(--ars-amber);     /* 10.46:1 — data, never instruction */
+  --ars-trust-external-bg: color-mix(in srgb, var(--ars-amber) 10%, var(--ars-surface));
+  --ars-trust-external-border: color-mix(in srgb, var(--ars-amber) 45%, transparent);
+
+  /* Guard verdicts */
+  --ars-guard-allow:     var(--ars-teal);      /* 10.70:1 */
+  --ars-guard-confirm:   var(--ars-amber);     /* 10.46:1 */
+  --ars-guard-deny:      var(--ars-red);       /*  6.26:1 */
+
+  /* ---------------------------------------------------------------------
+     3. THE BEING — entity/ars-entity.js reads these. One source of truth for
+        A.R.S's colour, in CSS, so the HUD and the being never drift apart.
+     --------------------------------------------------------------------- */
+
+  --ars-entity-base:            var(--ars-cyan-500);  /* default core hue */
+  --ars-entity-rim:             var(--ars-cyan-200);  /* facet highlights, thread heads */
+  --ars-entity-deep:            #041A26;              /* the dark inside the iris */
+
+  /* Tier colour shift — ars.setTier(...) with the brain.py Tier.label strings */
+  --ars-entity-tier-recall:         var(--ars-ice);     /* tier 0 · ~1ms   · no model  */
+  --ars-entity-tier-documents:      var(--ars-teal);    /* tier 1 · ~20ms  · CPU only  */
+  --ars-entity-tier-local-model:    var(--ars-violet);  /* tier 2 · ~600ms · GPU busy  */
+  --ars-entity-tier-cloud-model:    var(--ars-amber);   /* tier 3 · leaves the device  */
+
+  /* State colour — alert is the only state that overrides the tier hue */
+  --ars-entity-state-idle:      var(--ars-cyan-600);
+  --ars-entity-state-listening: var(--ars-cyan-400);
+  --ars-entity-state-thinking:  var(--ars-cyan-500);
+  --ars-entity-state-speaking:  var(--ars-cyan-300);
+  --ars-entity-state-acting:    var(--ars-amber);
+  --ars-entity-state-alert:     var(--ars-red);
+
+  --ars-entity-bloom:           1.0;   /* 0 kills the bloom pass entirely */
+  --ars-entity-grain:           0.035; /* film grain over the composite */
+  --ars-entity-scanline:        0.055; /* scanline depth inside the being */
+
+  /* ---------------------------------------------------------------------
+     4. GLOW & BLOOM — the difference between "dark UI" and "HUD".
+        Glow is light, so it is always additive and never on a background you
+        need to read text against at low contrast.
+     --------------------------------------------------------------------- */
+
+  --ars-glow-xs:  0 0 4px  color-mix(in srgb, var(--ars-accent) 35%, transparent);
+  --ars-glow-sm:  0 0 8px  color-mix(in srgb, var(--ars-accent) 40%, transparent);
+  --ars-glow-md:  0 0 18px color-mix(in srgb, var(--ars-accent) 34%, transparent),
+                  0 0 3px  color-mix(in srgb, var(--ars-accent) 55%, transparent);
+  --ars-glow-lg:  0 0 44px color-mix(in srgb, var(--ars-accent) 28%, transparent),
+                  0 0 12px color-mix(in srgb, var(--ars-accent) 40%, transparent);
+  --ars-glow-danger: 0 0 20px color-mix(in srgb, var(--ars-danger) 45%, transparent),
+                     0 0 4px  color-mix(in srgb, var(--ars-danger) 65%, transparent);
+  --ars-glow-warn:   0 0 18px color-mix(in srgb, var(--ars-warn) 38%, transparent);
+  --ars-glow-ok:     0 0 18px color-mix(in srgb, var(--ars-ok) 38%, transparent);
+
+  --ars-text-glow:       0 0 12px color-mix(in srgb, var(--ars-accent) 45%, transparent);
+  --ars-text-glow-soft:  0 0 10px rgb(0 0 0 / 0.8);
+
+  /* ---------------------------------------------------------------------
+     5. TYPE — system stacks only. No webfont, no CDN, no network. The sci-fi
+        register comes from case, tracking and tabular numerals, not a novelty
+        typeface that would fail to load offline anyway.
+     --------------------------------------------------------------------- */
+
+  --ars-font-ui:      -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
+                      "Segoe UI", Inter, system-ui, sans-serif;
+  --ars-font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display",
+                      "Segoe UI", Inter, system-ui, sans-serif;
+  --ars-font-mono:    ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono",
+                      "Roboto Mono", monospace;
+
+  /* 1.25 minor third, anchored at 14px body. rem so OS text-size settings work. */
+  --ars-text-2xs:  0.625rem;   /* 10px  — micro labels, ALWAYS uppercase + tracked */
+  --ars-text-xs:   0.6875rem;  /* 11px  — meta, timestamps */
+  --ars-text-sm:   0.78125rem; /* 12.5px— dense readouts, table cells */
+  --ars-text-md:   0.875rem;   /* 14px  — body */
+  --ars-text-lg:   1.0625rem;  /* 17px  — panel title, lead */
+  --ars-text-xl:   1.3125rem;  /* 21px  — section head */
+  --ars-text-2xl:  1.6875rem;  /* 27px  — screen head */
+  --ars-text-3xl:  2.125rem;   /* 34px  — hero readout */
+  --ars-text-4xl:  2.75rem;    /* 44px  — the one big number */
+
+  --ars-leading-tight: 1.15;
+  --ars-leading-snug:  1.35;
+  --ars-leading-body:  1.55;
+
+  --ars-weight-regular: 400;
+  --ars-weight-medium:  500;
+  --ars-weight-semi:    600;
+  --ars-weight-bold:    700;
+
+  --ars-track-label:  0.14em;  /* uppercase micro labels */
+  --ars-track-tight: -0.01em;  /* display sizes */
+  --ars-track-none:   0;
+
+  /* ---------------------------------------------------------------------
+     6. SPACE, RADIUS, BORDER — 4px base grid.
+     --------------------------------------------------------------------- */
+
+  --ars-space-0:   0;
+  --ars-space-1:   0.25rem;  /*  4 */
+  --ars-space-2:   0.5rem;   /*  8 */
+  --ars-space-3:   0.75rem;  /* 12 */
+  --ars-space-4:   1rem;     /* 16 */
+  --ars-space-5:   1.5rem;   /* 24 */
+  --ars-space-6:   2rem;     /* 32 */
+  --ars-space-7:   3rem;     /* 48 */
+  --ars-space-8:   4rem;     /* 64 */
+
+  /* Machined, not rounded-app. Corners are small and consistent; the notched
+     panel corners in hud.js do the visual work instead of a big radius. */
+  --ars-radius-xs:  2px;
+  --ars-radius-sm:  3px;
+  --ars-radius-md:  5px;
+  --ars-radius-lg:  8px;
+  --ars-radius-pill: 999px;
+
+  --ars-hairline: 1px;
+  --ars-notch:    10px;   /* corner cut on framed panels */
+
+  /* ---------------------------------------------------------------------
+     7. ELEVATION — dark UI gets depth from an inner top highlight plus a long
+        soft drop, not from a grey step alone.
+     --------------------------------------------------------------------- */
+
+  --ars-shadow-0: none;
+  --ars-shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --ars-shadow-2: 0 2px 4px rgb(0 0 0 / 0.45), 0 8px 20px -10px rgb(0 0 0 / 0.7);
+  --ars-shadow-3: 0 4px 10px rgb(0 0 0 / 0.5), 0 20px 44px -18px rgb(0 0 0 / 0.85);
+  --ars-shadow-4: 0 10px 28px rgb(0 0 0 / 0.55), 0 40px 90px -30px rgb(0 0 0 / 0.9);
+
+  --ars-inner-top:   inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --ars-inner-edge:  inset 0 0 0 1px var(--ars-border);
+  --ars-inner-well:  inset 0 1px 3px rgb(0 0 0 / 0.6);
+
+  /* ---------------------------------------------------------------------
+     8. TEXTURE — scanlines, grid, vignette, brushed sheen. Layer these as
+        background-image; they are all pure gradients, no image files.
+     --------------------------------------------------------------------- */
+
+  --ars-scanline-size: 3px;
+  --ars-scanline-alpha: 0.045;
+  --ars-scanlines: repeating-linear-gradient(
+      to bottom,
+      rgb(255 255 255 / var(--ars-scanline-alpha)) 0 1px,
+      transparent 1px var(--ars-scanline-size));
+
+  --ars-grid-size: 32px;
+  --ars-grid-alpha: 0.05;
+  --ars-grid: linear-gradient(color-mix(in srgb, var(--ars-line) calc(var(--ars-grid-alpha) * 700%), transparent) 1px, transparent 1px) 0 0 / var(--ars-grid-size) var(--ars-grid-size),
+              linear-gradient(90deg, color-mix(in srgb, var(--ars-line) calc(var(--ars-grid-alpha) * 700%), transparent) 1px, transparent 1px) 0 0 / var(--ars-grid-size) var(--ars-grid-size);
+
+  --ars-vignette: radial-gradient(120% 90% at 50% 40%, transparent 40%, rgb(0 0 0 / 0.55) 100%);
+  --ars-sheen:    linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0) 42%);
+  --ars-panel-bg: linear-gradient(180deg,
+                    color-mix(in srgb, var(--ars-surface) 92%, #ffffff 8%) 0%,
+                    var(--ars-surface) 34%,
+                    color-mix(in srgb, var(--ars-surface) 92%, #000000 8%) 100%);
+
+  /* ---------------------------------------------------------------------
+     9. MOTION — mechanical, not bouncy. A.R.S is machined; it settles, it
+        detents, it does not wobble like a toy.
+     --------------------------------------------------------------------- */
+
+  --ars-dur-instant: 70ms;
+  --ars-dur-fast:    120ms;
+  --ars-dur-base:    200ms;
+  --ars-dur-slow:    340ms;
+  --ars-dur-slower:  600ms;
+  --ars-dur-breath:  4200ms;   /* the idle breathing period */
+
+  --ars-ease-out:  cubic-bezier(0.16, 0.84, 0.44, 1);
+  --ars-ease-in:   cubic-bezier(0.5, 0, 0.9, 0.3);
+  --ars-ease-mech: cubic-bezier(0.2, 0.9, 0.1, 1);   /* detent: quick, tiny overshoot */
+  --ars-ease-hold: cubic-bezier(0.65, 0, 0.35, 1);
+  --ars-ease-linear: linear;
+
+  /* ---------------------------------------------------------------------
+     10. LAYERS
+     --------------------------------------------------------------------- */
+
+  --ars-z-base:     0;
+  --ars-z-entity:   10;
+  --ars-z-hud:      20;
+  --ars-z-panel:    30;
+  --ars-z-overlay:  40;
+  --ars-z-modal:    50;
+  --ars-z-toast:    60;
+  --ars-z-alert:    70;   /* a guard DENY outranks everything on screen */
+
+  /* Focus ring — 3.80:1 against surface, plus a glow so it survives on glass */
+  --ars-focus-ring: 0 0 0 1px var(--ars-bg-chrome), 0 0 0 3px var(--ars-accent-bright),
+                    0 0 12px color-mix(in srgb, var(--ars-accent) 55%, transparent);
+}
+
+/* ==========================================================================
+   LIGHT FALLBACK
+   Daylight, projectors, and anyone who needs it. The HUD language survives —
+   hairlines, tracking, notched corners, tabular numerals — but the glow drops
+   to near nothing, because bloom on white is smudge. The being switches to a
+   light-safe palette in JS by reading these same tokens.
+   ========================================================================== */
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { color-scheme: light; }
+}
+
+:root[data-theme="light"],
+:root[data-theme="light"] * { color-scheme: light; }
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ars-void:      #E4EBF1;
+    --ars-hull-0:    #EEF3F7;
+    --ars-hull-1:    #FFFFFF;
+    --ars-hull-2:    #F5F8FB;
+    --ars-hull-3:    #E7EEF4;
+    --ars-hull-4:    #D8E3EC;
+
+    --ars-line:      #B9C9D6;   /* 1.70:1 on white — decorative hairline */
+    --ars-line-hi:   #5A7386;   /* 4.96:1 on white — focus/active, clears 3:1 easily */
+
+    --ars-ink:       #0D1B26;   /* 17.47:1 on white · 15.64:1 on background */
+    --ars-ink-dim:   #3C5163;   /*  8.24:1 on white */
+    --ars-ink-mute:  #5A7386;   /*  4.96:1 on white — still body-safe */
+
+    --ars-cyan-100:  #052F3A;
+    --ars-cyan-200:  #075A6C;
+    --ars-cyan-300:  #0A7E96;
+    --ars-cyan-400:  #0B7387;   /* 5.50:1 on white · 4.93:1 on background */
+    --ars-cyan-500:  #0B7387;
+    --ars-cyan-600:  #095E6E;
+    --ars-cyan-700:  #074C59;
+
+    --ars-ice:       #0B6E82;   /* 5.9:1 on white */
+    --ars-teal:      #0E7A55;   /* 5.34:1 on white */
+    --ars-violet:    #5C3BC4;   /* 7.30:1 on white */
+    --ars-amber:     #8A5200;   /* 6.39:1 on white */
+    --ars-red:       #C01427;   /* 6.23:1 on white */
+    --ars-red-deep:  #A00F20;
+
+    --ars-surface-sunken: #E7EEF4;
+    --ars-text-on-accent: #FFFFFF;   /* 5.50:1 on cyan fill */
+    --ars-text-on-danger: #FFFFFF;   /* 6.23:1 on red fill */
+
+    /* Light theme keeps structure, loses bloom. */
+    --ars-glow-xs: none;
+    --ars-glow-sm: 0 0 0 1px color-mix(in srgb, var(--ars-accent) 22%, transparent);
+    --ars-glow-md: 0 1px 3px color-mix(in srgb, var(--ars-accent) 22%, transparent);
+    --ars-glow-lg: 0 2px 12px color-mix(in srgb, var(--ars-accent) 20%, transparent);
+    --ars-glow-danger: 0 1px 6px color-mix(in srgb, var(--ars-danger) 30%, transparent);
+    --ars-glow-warn:   0 1px 6px color-mix(in srgb, var(--ars-warn) 28%, transparent);
+    --ars-glow-ok:     0 1px 6px color-mix(in srgb, var(--ars-ok) 28%, transparent);
+    --ars-text-glow: none;
+    --ars-text-glow-soft: none;
+
+    --ars-scanline-alpha: 0.02;
+    --ars-scanlines: repeating-linear-gradient(to bottom,
+        rgb(0 0 0 / var(--ars-scanline-alpha)) 0 1px, transparent 1px var(--ars-scanline-size));
+    --ars-grid-alpha: 0.09;
+    --ars-vignette: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgb(0 0 0 / 0.1) 100%);
+    --ars-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0) 50%);
+    --ars-panel-bg: linear-gradient(180deg, #FFFFFF 0%, #FAFCFE 100%);
+
+    --ars-inner-top:  inset 0 1px 0 rgb(255 255 255 / 0.9);
+    --ars-inner-well: inset 0 1px 2px rgb(13 27 38 / 0.12);
+    --ars-shadow-1: 0 1px 2px rgb(13 27 38 / 0.10);
+    --ars-shadow-2: 0 1px 3px rgb(13 27 38 / 0.10), 0 6px 16px -8px rgb(13 27 38 / 0.20);
+    --ars-shadow-3: 0 2px 6px rgb(13 27 38 / 0.10), 0 16px 34px -14px rgb(13 27 38 / 0.26);
+    --ars-shadow-4: 0 6px 18px rgb(13 27 38 / 0.12), 0 32px 70px -26px rgb(13 27 38 / 0.32);
+
+    --ars-entity-deep: #0B3948;
+    --ars-entity-rim:  #0A7E96;
+    --ars-entity-bloom: 0.35;
+    --ars-entity-grain: 0.012;
+    --ars-entity-scanline: 0.02;
+  }
+}
+
+/* Explicit opt-in copy of the light block for [data-theme="light"], so the app
+   can offer a theme switch that does not depend on the OS setting. */
+:root[data-theme="light"] {
+  --ars-void:      #E4EBF1;
+  --ars-hull-0:    #EEF3F7;
+  --ars-hull-1:    #FFFFFF;
+  --ars-hull-2:    #F5F8FB;
+  --ars-hull-3:    #E7EEF4;
+  --ars-hull-4:    #D8E3EC;
+  --ars-line:      #B9C9D6;
+  --ars-line-hi:   #5A7386;
+  --ars-ink:       #0D1B26;
+  --ars-ink-dim:   #3C5163;
+  --ars-ink-mute:  #5A7386;
+  --ars-cyan-100:  #052F3A;
+  --ars-cyan-200:  #075A6C;
+  --ars-cyan-300:  #0A7E96;
+  --ars-cyan-400:  #0B7387;
+  --ars-cyan-500:  #0B7387;
+  --ars-cyan-600:  #095E6E;
+  --ars-cyan-700:  #074C59;
+  --ars-ice:       #0B6E82;
+  --ars-teal:      #0E7A55;
+  --ars-violet:    #5C3BC4;
+  --ars-amber:     #8A5200;
+  --ars-red:       #C01427;
+  --ars-red-deep:  #A00F20;
+  --ars-surface-sunken: #E7EEF4;
+  --ars-text-on-accent: #FFFFFF;
+  --ars-text-on-danger: #FFFFFF;
+  --ars-glow-xs: none;
+  --ars-glow-sm: 0 0 0 1px color-mix(in srgb, var(--ars-accent) 22%, transparent);
+  --ars-glow-md: 0 1px 3px color-mix(in srgb, var(--ars-accent) 22%, transparent);
+  --ars-glow-lg: 0 2px 12px color-mix(in srgb, var(--ars-accent) 20%, transparent);
+  --ars-glow-danger: 0 1px 6px color-mix(in srgb, var(--ars-danger) 30%, transparent);
+  --ars-glow-warn:   0 1px 6px color-mix(in srgb, var(--ars-warn) 28%, transparent);
+  --ars-glow-ok:     0 1px 6px color-mix(in srgb, var(--ars-ok) 28%, transparent);
+  --ars-text-glow: none;
+  --ars-text-glow-soft: none;
+  --ars-scanline-alpha: 0.02;
+  --ars-scanlines: repeating-linear-gradient(to bottom,
+      rgb(0 0 0 / var(--ars-scanline-alpha)) 0 1px, transparent 1px var(--ars-scanline-size));
+  --ars-grid-alpha: 0.09;
+  --ars-vignette: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgb(0 0 0 / 0.1) 100%);
+  --ars-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0) 50%);
+  --ars-panel-bg: linear-gradient(180deg, #FFFFFF 0%, #FAFCFE 100%);
+  --ars-inner-top:  inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --ars-inner-well: inset 0 1px 2px rgb(13 27 38 / 0.12);
+  --ars-shadow-1: 0 1px 2px rgb(13 27 38 / 0.10);
+  --ars-shadow-2: 0 1px 3px rgb(13 27 38 / 0.10), 0 6px 16px -8px rgb(13 27 38 / 0.20);
+  --ars-shadow-3: 0 2px 6px rgb(13 27 38 / 0.10), 0 16px 34px -14px rgb(13 27 38 / 0.26);
+  --ars-shadow-4: 0 6px 18px rgb(13 27 38 / 0.12), 0 32px 70px -26px rgb(13 27 38 / 0.32);
+  --ars-entity-deep: #0B3948;
+  --ars-entity-rim:  #0A7E96;
+  --ars-entity-bloom: 0.35;
+  --ars-entity-grain: 0.012;
+  --ars-entity-scanline: 0.02;
+}
+
+/* ==========================================================================
+   BASE — the minimum needed so a page using these tokens is not naked.
+   Components live in hud.js; this is just the ground.
+   ========================================================================== */
+
+.ars-root,
+body.ars-root {
+  margin: 0;
+  background-color: var(--ars-bg);
+  color: var(--ars-text);
+  font-family: var(--ars-font-ui);
+  font-size: var(--ars-text-md);
+  line-height: var(--ars-leading-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+  accent-color: var(--ars-accent);
+  overscroll-behavior: none;
+}
+
+.ars-root ::selection {
+  background: color-mix(in srgb, var(--ars-accent) 35%, transparent);
+  color: var(--ars-text);
+}
+
+.ars-root :focus-visible {
+  outline: none;
+  box-shadow: var(--ars-focus-ring);
+  border-radius: var(--ars-radius-sm);
+}
+
+/* Backdrop: deep field + grid + vignette. Put on the app shell's root element. */
+.ars-backdrop {
+  background-color: var(--ars-bg);
+  background-image:
+    radial-gradient(80% 60% at 50% 0%, color-mix(in srgb, var(--ars-cyan-900) 60%, transparent), transparent 70%),
+    var(--ars-grid),
+    var(--ars-vignette);
+  background-attachment: fixed;
+}
+
+/* Texture utilities — apply to a positioned element; they paint an overlay. */
+.ars-scanlines::after,
+.ars-noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.ars-scanlines::after { background-image: var(--ars-scanlines); mix-blend-mode: soft-light; }
+.ars-noise::after {
+  opacity: 0.5;
+  background-image: repeating-conic-gradient(rgb(255 255 255 / 0.02) 0% 25%, transparent 0% 50%);
+  background-size: 3px 3px;
+}
+
+/* Type utilities — the four registers the HUD actually uses. */
+.ars-label {
+  font-size: var(--ars-text-2xs);
+  font-weight: var(--ars-weight-semi);
+  letter-spacing: var(--ars-track-label);
+  text-transform: uppercase;
+  color: var(--ars-text-muted);        /* 5.92:1 on surface */
+  line-height: var(--ars-leading-tight);
+}
+.ars-readout {
+  font-family: var(--ars-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 1;
+  letter-spacing: 0.01em;
+}
+.ars-display {
+  font-family: var(--ars-font-display);
+  letter-spacing: var(--ars-track-tight);
+  line-height: var(--ars-leading-tight);
+  font-weight: var(--ars-weight-semi);
+}
+.ars-body { font-size: var(--ars-text-md); line-height: var(--ars-leading-body); }
+
+/* ==========================================================================
+   PREFERENCES
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ars-dur-instant: 1ms; --ars-dur-fast: 1ms; --ars-dur-base: 1ms;
+    --ars-dur-slow: 1ms; --ars-dur-slower: 1ms; --ars-dur-breath: 1ms;
+    --ars-entity-grain: 0;
+  }
+  .ars-root *, .ars-root *::before, .ars-root *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --ars-ink-mute: #B9CDDB;   /* 8.6:1 on surface */
+    --ars-line: #46617A;
+    --ars-line-hi: #7FA8C2;
+    --ars-scanline-alpha: 0;
+    --ars-grid-alpha: 0.02;
+    --ars-entity-grain: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  :root {
+    --ars-border: CanvasText;
+    --ars-text: CanvasText;
+    --ars-text-secondary: CanvasText;
+    --ars-text-muted: CanvasText;
+    --ars-surface: Canvas;
+    --ars-glow-md: none; --ars-glow-lg: none; --ars-text-glow: none;
+  }
+}

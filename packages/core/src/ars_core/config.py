@@ -4,11 +4,13 @@ no API keys, no network, and no accounts. Cloud is opt-in, always."""
 from __future__ import annotations
 
 import platform
+import json
 from pathlib import Path
+from typing import Annotated
 
 from ars_protocol import Language
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class VoiceConfig(BaseSettings):
@@ -70,7 +72,28 @@ class ArsConfig(BaseSettings):
     env: str = "dev"
     data_dir: Path = Path("./var")
     log_level: str = "INFO"
-    languages: tuple[Language, ...] = (Language.EN, Language.RO)
+    languages: Annotated[tuple[Language, ...], NoDecode] = (Language.EN, Language.RO)
+
+    @field_validator("languages", mode="before")
+    @classmethod
+    def _parse_languages(cls, v: object) -> object:
+        """Accept `ARS_LANGUAGES=en,ro`.
+
+        pydantic-settings JSON-decodes complex types *before* validation, so the natural
+        spelling in a .env file blows up at import with "error parsing value for field
+        languages" — before anything has logged, so the user sees a stack trace instead of
+        an assistant. `NoDecode` hands us the raw string so this runs at all. A config
+        format that only accepts `["en","ro"]` is a config format nobody guesses.
+        """
+        if isinstance(v, str):
+            text = v.strip()
+            if text.startswith("["):
+                # NoDecode turned off the automatic JSON parse, so honour it here — the
+                # documented spelling must not stop working just because we added a
+                # friendlier one.
+                return tuple(json.loads(text))
+            return tuple(part.strip() for part in text.split(",") if part.strip())
+        return v
 
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)

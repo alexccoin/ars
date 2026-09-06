@@ -102,6 +102,48 @@ within 600 ms** — silence while it works reads as failure.
 Guard evaluation is allocated **0 ms**: it is an in-process policy check against loaded
 grants, with no network call on the hot path. If it ever needs I/O, the design is wrong.
 
+## The tier ladder — how much machine a question is worth
+
+Most questions a personal assistant gets are lookups, and running a 14B model for a
+lookup is slower than finding the passage, not faster. So a turn climbs a ladder and
+stops at the first rung that answers, in `services/gateway/brain.py`:
+
+| Tier | Answers from | Cost | Gate |
+|---|---|---:|---|
+| 0 `RECALL` | an answer already given to this same question | ~1 ms, no model | raw cosine ≥ 0.82 |
+| 1 `DOCUMENTS` | a passage from the user's own learned files | ~10 ms, CPU only | calibrated confidence ≥ 0.85 |
+| 2 `LOCAL` | the local model, on the GPU | ~4-8 s | — |
+| 3 `CLOUD` | a cloud model, only if granted and not private | network | — |
+
+The two gates are deliberately on different scales, because they ask different questions
+of different populations. Tier 0 compares a question to a question ("is this the same
+thing again?"); tier 1 asks whether a passage answers one. Both numbers come from
+`research/benchmarks/retrieval_calibration.py`, which measures them on the real embedding
+model with the same questions in English and Romanian, and refuses to emit constants when
+the relevant and irrelevant populations overlap.
+
+The percentage the interface shows is that calibration, not a raw cosine: 85% means "as
+far above the noise floor as a real answer sits". Every turn reports the tier that
+answered it and why, and the escalation endpoint records that a question needed a higher
+tier next time — which is what actually tunes the threshold.
+
+**Known limit: the document tier is same-language.** A Romanian question finds a Romanian
+document (measured 0.844) and an English one an English document (0.831); the same
+question asked in the *other* language scores 0.778-0.817, which is the range unrelated
+questions also reach. No threshold separates those, so a cross-language question falls
+through to the model — which reads the passage as context and answers correctly, in the
+language it was asked.
+
+A larger model does not fix it: `intfloat/multilingual-e5-base` was measured on the same
+fixtures and separates cross-language matches from irrelevant ones by **-0.007** — it
+cannot tell them apart either — while being *worse* than e5-small on the same-language
+tier (-0.014 against +0.007). So the 768-dimensional migration buys nothing and was not
+made. Re-run the benchmark against a candidate before proposing that again.
+
+Which model built the vector index is recorded in `memory_meta` and checked on every
+open: vectors from two models are not comparable, and a silently mixed index returns the
+wrong passage with high confidence. On a mismatch the store re-embeds.
+
 ## Trust boundaries
 
 | Boundary | Crossing | Enforcement |
