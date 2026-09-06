@@ -194,3 +194,59 @@ class SkillRuntime(ABC):
         """Must never be reached without a prior ALLOW from the guard. The runtime
         re-checks anyway: defence in depth, because this is the last line before a
         side effect touches the user's real accounts."""
+
+
+class UnsupportedDirection(Exception):
+    """A translation was asked for between languages a backend does not support.
+
+    Raised rather than approximated. Fluent output in the wrong language is the worst
+    failure this seam has, because the person who asked for a translation is by definition
+    the person least able to check it.
+    """
+
+    def __init__(self, source: Language | None, target: Language) -> None:
+        self.source, self.target = source, target
+        super().__init__(
+            f"no translation from {getattr(source, 'value', source) or 'auto'} "
+            f"to {getattr(target, 'value', target)}"
+        )
+
+
+class TranslationEngine(ABC):
+    """Text in one language, text in another. Nothing else.
+
+    Note what this signature cannot accept: a session, a memory record, a conversation
+    history, a tool. That is a privacy property enforced by the type rather than by a
+    reviewer noticing — "never send more of the user's memory to a provider than the task
+    needs" holds here because there is no parameter through which memory could travel.
+
+    Backends live where their vendor SDK already lives, per CLAUDE.md rule 2.
+    """
+
+    @property
+    @abstractmethod
+    def pairs(self) -> frozenset[tuple[Language, Language]]:
+        """Directions this backend will actually translate, source to target."""
+
+    @abstractmethod
+    def translate(
+        self,
+        text: str,
+        *,
+        source: Language | None,
+        target: Language,
+    ) -> AsyncIterator[str]:
+        """Stream the translation as it is produced.
+
+        Declared `def`, not `async def`, for the same reason as `LlmBackend.complete`: an
+        async generator function already returns an `AsyncIterator`, and declaring the seam
+        `async def` forces every call site into `async for x in await engine.translate(...)`,
+        which everyone gets wrong once.
+
+        `source=None` means detect. Callers on the voice path should always pass one —
+        `Transcript.language` already paid for that decision through the arbiter and the
+        matrix detector, and asking the translator for a second opinion is how a turn ends
+        up translated out of a language nobody spoke.
+
+        Raises `UnsupportedDirection` when `(source, target)` is not in `pairs`.
+        """

@@ -817,7 +817,10 @@ class Model {
     const tierCol = this.tier ? th.tiers[this.tier] : null;
     let a;
     if (this.state === 'alert') a = st;
-    else if (this.state === 'acting') a = tierCol ? mixc(tierCol, st, 0.72) : st;
+    /* acting keeps its amber almost undiluted: mixing the documents tier's
+       teal into it at 0.28 produced yellow-green, which reads as "some other
+       state" rather than "A.R.S is touching a real account right now". */
+    else if (this.state === 'acting') a = tierCol ? mixc(tierCol, st, 0.88) : st;
     else if (tierCol) a = mixc(tierCol, st, 0.22);
     else a = st;
     a = saturate(a, 1.28);
@@ -1223,7 +1226,9 @@ class C2DRenderer {
 
     /* filaments */
     const threads = clamp(u.think * 0.9 + u.act * 0.5 + u.open * 0.35, 0, 1);
-    const nFil = Math.min(q.filaments, Math.round(q.filaments * (0.25 + 0.75 * threads)));
+    /* half the GL count: without a per-fragment head glow these read as lines,
+       and lines add up to scribble much faster than light does. */
+    const nFil = Math.round(q.filaments * 0.5 * (0.25 + 0.75 * threads));
     ctx.lineWidth = Math.max(0.004, px * 1.2);
     for (let i = 0; i < nFil; i++) {
       const seed = i * 1.6180339887;
@@ -1233,7 +1238,7 @@ class C2DRenderer {
       const a0 = frac(seed * 57.13 + ep * 131.7) * Math.PI * 2;
       const a1 = a0 + (frac(seed * 13.7 + ep * 77.3) - 0.5) * 2.7;
       const r0 = cr * (0.8 + 0.22 * frac(seed * 21.1 + ep * 5.3));
-      const r1 = cr + (0.09 + 0.6 * frac(seed * 9.3 + ep * 41.7)) * sp;
+      const r1 = cr + (0.07 + 0.42 * frac(seed * 9.3 + ep * 41.7)) * sp;
       const P0 = [Math.cos(a0) * r0, Math.sin(a0) * r0];
       const P2 = [Math.cos(a1) * r1, Math.sin(a1) * r1];
       const dx = P2[0] - P0[0], dy = P2[1] - P0[1];
@@ -1241,7 +1246,7 @@ class C2DRenderer {
       const bow = (frac(seed * 3.7 + ep * 19.1) - 0.5) * 0.75 * len;
       const P1 = [(P0[0] + P2[0]) / 2 - (dy / len) * bow, (P0[1] + P2[1]) / 2 + (dx / len) * bow];
       const env = smooth01(life / 0.05) * smooth01((1 - life) / 0.3);
-      ctx.strokeStyle = rgb(mixc(A, B, 0.6), 0.65 * env);
+      ctx.strokeStyle = rgb(mixc(A, B, 0.6), 0.45 * env);
       ctx.beginPath();
       ctx.moveTo(P0[0], P0[1]);
       ctx.quadraticCurveTo(P1[0], P1[1], P2[0], P2[1]);
@@ -1571,8 +1576,8 @@ export class ArsEntity {
     }
     if (this.mqScheme && this.mqScheme.removeEventListener) this.mqScheme.removeEventListener('change', this._onScheme);
     if (this.renderer) { try { this.renderer.destroy(); } catch { /* context already gone */ } }
-    if (this.canvas.parentElement && this.canvas.parentElement !== this.mount) this.canvas.remove();
-    else if (this.mount !== this.canvas) this.canvas.remove();
+    /* Only remove the canvas if we were the ones who made it. */
+    if (this.mount !== this.canvas) this.canvas.remove();
     if (this.mount && this.mount.classList) this.mount.classList.remove('ars-entity-host');
   }
 
