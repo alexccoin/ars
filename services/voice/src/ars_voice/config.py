@@ -92,7 +92,7 @@ class WakewordConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ARS_WAKE_", env_file=".env", extra="ignore")
 
     backend: str = "mock"
-    """'openwakeword' (needs models/wakeword) or 'mock'."""
+    """'openwakeword' (needs models/wakeword), 'manual' (push-to-talk), 'mock' or 'null'."""
 
     pre_roll_ms: int = Field(default=500, ge=0, le=5_000)
     """Audio retained from before detection. Must match `WakeEvent.pre_roll_ms` semantics:

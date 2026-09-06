@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .brain import Answer, Tier, TieredBrain
 from .documents import DocumentLibrary, UnsupportedDocument
+from .voice import LadderTurnHandler, VoiceLoop
 
 log = logging.getLogger("ars.gateway")
 UI_DIR = Path(__file__).parent / "ui"
@@ -56,6 +57,9 @@ class Ars:
         self.brain: Any = None
         self.library: Any = None
         self.skills: Any = None
+        self.voice: Any = None
+        """Built on the first press of the mic button, never at startup: the voice models
+        are ~1.6 GB and a user who only types should not wait for them."""
         self.ready = False
         self.startup_note = ""
 
@@ -121,7 +125,24 @@ class Ars:
             log.warning(self.startup_note)
         self.ready = True
 
+    async def listen(self, on_event: Any) -> Any:
+        """Start (or reuse) the voice loop, and press the button once."""
+        if self.voice is None:
+            self.voice = VoiceLoop(
+                handler=LadderTurnHandler(answer_stream, cancel_backend=self.backend.cancel),
+                session=self.session,
+                on_event=on_event,
+            )
+        else:
+            self.voice._on_event = on_event  # the socket that asked is the one that hears
+        await self.voice.start()
+        self.voice.press()
+        return self.voice
+
     async def stop(self) -> None:
+        if self.voice is not None:
+            with contextlib.suppress(Exception):
+                await self.voice.stop()
         with contextlib.suppress(Exception):
             await self.memory.close()
         with contextlib.suppress(Exception):
@@ -260,9 +281,38 @@ async def websocket(ws: WebSocket) -> None:
             if kind == "interrupt":
                 if current and not current.done():
                     current.cancel()
+                if ars.voice is not None and ars.voice.running:
+                    # Barge-in: the pipeline owns the synthesiser and the speaker queue,
+                    # and muting the speaker while the machine keeps working is not an
+                    # interrupt, it is a lie.
+                    with contextlib.suppress(Exception):
+                        await ars.voice.interrupt()
                 with contextlib.suppress(Exception):
                     await ars.backend.cancel()
                 await ws.send_json({"type": "state", "state": "idle"})
+                continue
+
+            if kind == "listen":
+                # The desktop shell's WKWebView has no getUserMedia, so the button does
+                # not capture anything — it tells the gateway to, and the audio never
+                # leaves this process.
+                if message.get("on") is False:
+                    if ars.voice is not None:
+                        await ars.voice.stop()
+                    await ws.send_json({"type": "listening", "on": False})
+                    continue
+                try:
+                    await ws.send_json({"type": "listening", "on": True, "warming": True})
+                    voice = await ars.listen(ws.send_json)
+                    await ws.send_json({"type": "listening", "on": True, "warming": False,
+                                        "warm_up_ms": voice.warm_up_ms})
+                except Exception as exc:
+                    log.exception("could not start listening")
+                    await ws.send_json({
+                        "type": "error", "code": type(exc).__name__,
+                        "message": f"could not open the microphone: {exc}",
+                        "recoverable": True,
+                    })
                 continue
 
             if kind != "text":

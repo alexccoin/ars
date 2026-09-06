@@ -35,12 +35,16 @@ const STRINGS = {
   'console.input_label': { en: 'Command console input', ro: 'Câmp de comandă al consolei' },
   'console.send': { en: 'Send', ro: 'Trimite' },
   'console.mic': { en: 'Voice input', ro: 'Intrare vocală' },
-  'console.mic_stub': {
-    en: 'Voice capture is not wired to this gateway yet — the text console is the primary interface. Microphone access was only checked, not streamed.',
-    ro: 'Captura vocală nu este încă legată la acest gateway — consola de text este interfața principală. Accesul la microfon a fost doar verificat, nu transmis.',
+  'console.mic_warming': {
+    en: 'Loading the voice models — about ten seconds the first time, then instant.',
+    ro: 'Se încarcă modelele vocale — circa zece secunde prima dată, apoi instant.',
   },
+  'console.mic_ready': {
+    en: 'Listening. Speak — A.R.S answers out loud, in the language you use.',
+    ro: 'Ascult. Vorbește — A.R.S răspunde cu voce tare, în limba în care vorbești.',
+  },
+  'console.mic_off': { en: 'Microphone off.', ro: 'Microfon oprit.' },
   'console.mic_denied': { en: 'Microphone permission denied — use the text console below instead.', ro: 'Permisiunea de microfon a fost refuzată — folosește consola de text de mai jos.' },
-  'console.mic_unsupported': { en: 'This browser has no microphone API — text console only.', ro: 'Acest browser nu are API de microfon — doar consola de text.' },
   'console.you': { en: 'you', ro: 'tu' },
   'console.ars': { en: 'A.R.S', ro: 'A.R.S' },
   'console.system': { en: 'system', ro: 'sistem' },

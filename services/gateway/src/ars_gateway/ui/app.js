@@ -252,6 +252,17 @@ async function main() {
         if (msg.turn_id) bindTurn(msg.turn_id);
         break;
       }
+      case 'listening': {
+        consoleUI.setListening(msg.on);
+        if (msg.on && msg.warming) {
+          consoleUI.appendSystemLine(t('console.mic_warming', getLang()), 'info');
+        } else if (msg.on) {
+          consoleUI.appendSystemLine(t('console.mic_ready', getLang()), 'info');
+        } else {
+          consoleUI.appendSystemLine(t('console.mic_off', getLang()), 'info');
+        }
+        break;
+      }
       case 'transcript': {
         // Voice path isn't wired to this console yet (see console.js mic stub), but if a
         // transcript ever arrives — e.g. from another connected client — show it honestly,
@@ -363,6 +374,7 @@ async function main() {
     getLang,
     hud,
     onSubmit: handleInput,
+    onListen: (on) => sendMessage({ type: 'listen', on }),
     onInterrupt: () => {
       if (state.activeTurn) {
         state.activeTurn.handle.cancel();

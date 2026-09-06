@@ -26,6 +26,7 @@ from .vad.base import FrameVadEngine
 from .vad.energy import EnergyVadEngine
 from .vad.silero import SileroVadEngine
 from .wakeword.mock import MockWakewordEngine, NullWakewordEngine
+from .wakeword.manual import ManualWakewordEngine
 from .wakeword.openwakeword_engine import OpenWakeWordEngine
 
 log = logging.getLogger(__name__)
@@ -48,8 +49,16 @@ def build_wakeword(config: VoicePipelineConfig, **overrides) -> WakewordEngine:
             return MockWakewordEngine(**common)
         case "null":
             return NullWakewordEngine(**common)
+        case "manual":
+            # Push-to-talk. `refractory_ms` is the engine's own concern here — a press
+            # must never be swallowed — so it is not passed through from config.
+            return ManualWakewordEngine(
+                **{k: v for k, v in common.items() if k != "refractory_ms"}
+            )
         case other:
-            raise ValueError(f"unknown wakeword backend {other!r} (openwakeword|mock|null)")
+            raise ValueError(
+                f"unknown wakeword backend {other!r} (openwakeword|manual|mock|null)"
+            )
 
 
 def build_vad(config: VoicePipelineConfig) -> FrameVadEngine:

@@ -41,7 +41,7 @@ function saveHistory(list) {
   }
 }
 
-export function createConsole({ root, getLang, hud, onSubmit, onInterrupt, onEscalate }) {
+export function createConsole({ root, getLang, hud, onSubmit, onInterrupt, onEscalate, onListen }) {
   const history = loadHistory();
   let historyCursor = history.length;
   let draft = '';
@@ -317,20 +317,16 @@ export function createConsole({ root, getLang, hud, onSubmit, onInterrupt, onEsc
 
   stopBtn.addEventListener('click', () => onInterrupt && onInterrupt());
 
-  micBtn.addEventListener('click', async () => {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      appendSystemLine(t('console.mic_unsupported', getLang()), 'warn');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((tr) => tr.stop());
-      setMicState('idle');
-      appendSystemLine(t('console.mic_stub', getLang()), 'info');
-    } catch (err) {
-      setMicState('denied');
-      appendSystemLine(t('console.mic_denied', getLang()), 'warn');
-    }
+  // The microphone is not the browser's. The desktop shell is a WKWebView, which does
+  // not implement getUserMedia at all — asking for it here could only ever fail. Capture
+  // happens in the gateway, in Python, where the ASR and the speaker already live, and
+  // the audio never crosses this boundary in either direction. This button is a press.
+  let listening = false;
+  micBtn.addEventListener('click', () => {
+    if (!onListen) return;
+    listening = !listening;
+    setMicState(listening ? 'listening' : 'idle');
+    onListen(listening);
   });
 
   function retranslate() {
@@ -357,6 +353,10 @@ export function createConsole({ root, getLang, hud, onSubmit, onInterrupt, onEsc
     appendUserText,
     beginReply,
     setMicState,
+    setListening(on) {
+      listening = !!on;
+      setMicState(on ? 'listening' : 'idle');
+    },
     retranslate,
     clear,
     focusInput,
