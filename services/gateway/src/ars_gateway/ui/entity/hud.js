@@ -285,9 +285,14 @@ const HUD_CSS = `
   border-radius: var(--ars-radius-xs);
   --ars-tier-hue: var(--ars-ice);
 }
-.ars-hud-tier--documents   { --ars-tier-hue: var(--ars-teal); }
-.ars-hud-tier--local-model { --ars-tier-hue: var(--ars-violet); }
-.ars-hud-tier--cloud-model { --ars-tier-hue: var(--ars-amber); }
+/* Two classes deep, deliberately: the base rule above is .hud-tier.ars-hud-tier
+   (0,2,0), so a single-class modifier would lose the cascade and every tier
+   would render in the same ice hue — which silently removes the one signal
+   this component exists to carry. */
+.ars-hud-tier.ars-hud-tier--recall      { --ars-tier-hue: var(--ars-ice); }
+.ars-hud-tier.ars-hud-tier--documents   { --ars-tier-hue: var(--ars-teal); }
+.ars-hud-tier.ars-hud-tier--local-model { --ars-tier-hue: var(--ars-violet); }
+.ars-hud-tier.ars-hud-tier--cloud-model { --ars-tier-hue: var(--ars-amber); }
 .ars-hud-tier__rail {
   width: 3px; align-self: stretch; flex: none;
   background: var(--ars-tier-hue);
@@ -316,8 +321,8 @@ const HUD_CSS = `
   color: var(--ars-text-on-accent);
   background: var(--ars-tier-hue);
 }
-.ars-hud-tier--cloud-model { border-color: color-mix(in srgb, var(--ars-amber) 55%, transparent); }
-.ars-hud-tier--cloud-model .ars-hud-tier__chip { box-shadow: var(--ars-glow-warn); }
+.ars-hud-tier.ars-hud-tier--cloud-model { border-color: color-mix(in srgb, var(--ars-amber) 55%, transparent); }
+.ars-hud-tier.ars-hud-tier--cloud-model .ars-hud-tier__chip { box-shadow: var(--ars-glow-warn); }
 `;
 
 let injected = false;

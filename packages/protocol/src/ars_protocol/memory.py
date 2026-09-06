@@ -51,6 +51,22 @@ class MemoryRecord(Model):
     """Memory is corrected by superseding, never by silent overwrite — the old value
     stays auditable so the user can see what it used to believe and why."""
 
+    origin_id: str | None = None
+    """The record this one was derived from, if it was derived from one.
+
+    A translated copy of a passage, a summary, an extracted table — anything that exists
+    only because another record does. Two consequences, and both are correctness rather
+    than bookkeeping:
+
+    Deletion. `forget()` removes what it is asked for; without this field a derived record
+    survives its source, so a document the user deleted keeps answering questions through
+    its translation. That is non-negotiable #7 failing quietly.
+
+    Retrieval. A passage and its translation are the same passage, so they must never be
+    treated as two independent hits — the tiered brain's ambiguity rule refuses to answer
+    when the top two results score alike, and a record competing with its own twin trips
+    it every time. Measured: 2 of 12 questions that were answerable became unanswerable."""
+
 
 class BehaviourDomain(StrEnum):
     STYLE = "style"                 # length, tone, formality

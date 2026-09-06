@@ -227,3 +227,37 @@ async def test_a_failed_turn_is_answered_but_never_learned() -> None:
     )
 
     assert memory.remembered == []
+
+
+# ----------------------------------------------------------------- derived passages
+
+@pytest.mark.asyncio
+async def test_a_passage_does_not_compete_with_its_own_translation() -> None:
+    """Translating documents at ingest is what makes a German lease answer an English
+    question. It also puts a near-identical twin of every passage in the index, and the
+    ambiguity rule — which exists to refuse when two DIFFERENT passages score alike —
+    would fire on every single hit. The twin is the same passage, not a rival."""
+    original = _memory(PASSAGE, MemoryKind.DOCUMENT)
+    translation = _memory(PASSAGE, MemoryKind.DOCUMENT).model_copy(
+        update={"id": "mem_translation", "origin_id": original.id, "language": Language.EN}
+    )
+    brain = TieredBrain(memory=_FakeMemory([
+        Scored(rank=0.9, cosine=COSINE_ANSWERING_PASSAGE, record=original),
+        Scored(rank=0.9, cosine=COSINE_ANSWERING_PASSAGE - 0.0001, record=translation),
+    ]))
+
+    answer = await brain.try_cheap_tiers("Cât este chiria pe lună?", language=Language.RO)
+
+    assert answer is not None, "a passage was refused for being ambiguous with itself"
+    assert answer.tier is Tier.DOCUMENTS
+
+
+@pytest.mark.asyncio
+async def test_two_genuinely_different_passages_still_refuse() -> None:
+    """The rule must keep working for what it was written for."""
+    brain = TieredBrain(memory=_FakeMemory([
+        _document_hit(COSINE_ANSWERING_PASSAGE),
+        _document_hit(COSINE_ANSWERING_PASSAGE - 0.0001),
+    ]))
+
+    assert await brain.try_cheap_tiers("Cât este chiria pe lună?") is None

@@ -107,7 +107,11 @@ const mixc = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], 
  *  back without touching the tokens. */
 function saturate(c, k) {
   const l = c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
-  return [clamp(l + (c[0] - l) * k, 0, 1), clamp(l + (c[1] - l) * k, 0, 1), clamp(l + (c[2] - l) * k, 0, 1)];
+  const o = [l + (c[0] - l) * k, l + (c[1] - l) * k, l + (c[2] - l) * k];
+  /* Renormalise instead of clamping: clipping the red channel of the amber
+     tier turned it yellow-green, which is the wrong signal entirely. */
+  const m = Math.max(o[0], o[1], o[2], 1);
+  return [clamp(o[0] / m, 0, 1), clamp(o[1] / m, 0, 1), clamp(o[2] / m, 0, 1)];
 }
 
 /* --- state targets ------------------------------------------------------
@@ -274,7 +278,7 @@ void main(){
     float g = uRingGain[i] * mask * am;
     /* the heavy rings pick up a machined top-light so they read as metal */
     float shade = 0.72 + 0.45 * cos(a0 - 1.9);
-    col += mix(uColA, uColB, 0.30) * g * shade * 0.78;
+    col += mix(uColA, uColB, 0.30) * g * shade * 0.85;
   }
 
   /* bolts on the outer bezel — small, deliberate, mechanical */
@@ -816,7 +820,7 @@ class Model {
     else if (this.state === 'acting') a = tierCol ? mixc(tierCol, st, 0.72) : st;
     else if (tierCol) a = mixc(tierCol, st, 0.22);
     else a = st;
-    a = saturate(a, 1.35);
+    a = saturate(a, 1.28);
     /* The highlight has to stay the SAME hue, only brighter. Mixing toward
        white (or toward an ice-white rim token) is what turns a violet
        "local model" turn into generic sci-fi grey — normalise the body colour

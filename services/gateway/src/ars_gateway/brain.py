@@ -282,7 +282,19 @@ class TieredBrain:
 
         scored.sort(key=lambda triple: triple[0], reverse=True)
         top_score, top_cosine, top = scored[0]
-        runner_up = scored[1][0] if len(scored) > 1 else 0.0
+
+        # The runner-up has to be a genuinely different passage. A translated copy is the
+        # same passage in another language: it scores almost identically by construction,
+        # so counting it as a rival trips the ambiguity rule below and turns an answerable
+        # question into a GPU turn. Measured on documents translated at ingest: 2 of 12
+        # answerable questions became unanswerable, two of which the untranslated index
+        # had answered.
+        def same_passage(other: MemoryRecord) -> bool:
+            ids = {top.id, top.origin_id} - {None}
+            return other.id in ids or (other.origin_id is not None and other.origin_id in ids)
+
+        rivals = [score for score, _cosine, record in scored[1:] if not same_passage(record)]
+        runner_up = rivals[0] if rivals else 0.0
 
         # ---- tier 0: this exact question has been answered before
         if (floor <= Tier.RECALL and top.kind is MemoryKind.FACT

@@ -77,7 +77,7 @@ logger = logging.getLogger("ars_memory.store")
 _RECORD_COLUMNS = (
     "rowid, id, kind, text, language, sensitivity, provenance_source, provenance_trust, "
     "provenance_uri, provenance_fetched_at_ms, provenance_label, created_at_ms, "
-    "valid_until_ms, superseded_by"
+    "valid_until_ms, superseded_by, origin_id"
 )
 
 
@@ -326,8 +326,8 @@ class SqliteMemoryStore(MemoryStore):
                 id, kind, text, language, sensitivity,
                 provenance_source, provenance_trust, provenance_uri,
                 provenance_fetched_at_ms, provenance_label,
-                created_at_ms, valid_until_ms, superseded_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at_ms, valid_until_ms, superseded_by, origin_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record.id,
@@ -343,6 +343,7 @@ class SqliteMemoryStore(MemoryStore):
                 record.created_at_ms,
                 record.valid_until_ms,
                 record.superseded_by,
+                record.origin_id,
             ),
         )
         rowid = cursor.lastrowid
@@ -451,6 +452,28 @@ class SqliteMemoryStore(MemoryStore):
                     )
                 if not rows:
                     return 0
+
+                # Anything derived from what is being forgotten goes with it. A translated
+                # copy of a passage exists only because the passage does, so leaving it
+                # behind means a document the user deleted keeps answering questions
+                # through its translation — non-negotiable #7 failing in the one way the
+                # user would never think to check. Transitive, because a derived record
+                # can itself have derivatives.
+                rows = list(rows)
+                seen = {row["id"] for row in rows}
+                frontier = list(seen)
+                while frontier:
+                    placeholders = ",".join("?" * len(frontier))
+                    derived = await self._fetch_rows_where(
+                        f"origin_id IN ({placeholders})", tuple(frontier)
+                    )
+                    frontier = []
+                    for row in derived:
+                        if row["id"] in seen:
+                            continue
+                        seen.add(row["id"])
+                        rows.append(row)
+                        frontier.append(row["id"])
 
                 rowids = [row["rowid"] for row in rows]
                 ids = [row["id"] for row in rows]
@@ -743,6 +766,7 @@ class SqliteMemoryStore(MemoryStore):
             created_at_ms=row["created_at_ms"],
             valid_until_ms=row["valid_until_ms"],
             superseded_by=row["superseded_by"],
+            origin_id=row["origin_id"],
         )
 
 
