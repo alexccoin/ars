@@ -426,13 +426,23 @@ async def health() -> dict:
     return {"ok": ars.ready}
 
 
-if UI_DIR.exists():
-    app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
-
-
 @app.get("/")
 async def index() -> Any:
     page = UI_DIR / "index.html"
     if page.exists():
         return FileResponse(page)
     return JSONResponse({"ars": "running", "ui": "not built yet", "docs": "/docs"})
+
+
+# Mounted at the root, and last, on purpose.
+#
+# index.html is served from "/" and asks for `./theme.css` and `./app.js` — the natural
+# spelling, and the one that keeps working if the interface is ever opened from a file or
+# a different prefix. Mounted only under /ui, those resolve to /theme.css and /app.js and
+# 404: the HUD renders as unstyled HTML with no JavaScript, no console and no WebSocket,
+# while every API route still answers perfectly. Nothing catches that except opening it.
+#
+# Last, because a mount at "/" matches everything: every API route above is registered
+# first and therefore still wins. Anything added below this line will not be reachable.
+if UI_DIR.exists():
+    app.mount("/", StaticFiles(directory=UI_DIR, html=True), name="ui")

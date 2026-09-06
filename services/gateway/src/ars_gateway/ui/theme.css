@@ -449,6 +449,17 @@
    Components live in hud.js; this is just the ground.
    ========================================================================== */
 
+/* Any `display` rule beats the `hidden` attribute's `display: none`, because the
+   attribute's rule comes from the UA stylesheet and loses to an author one. Seventeen
+   places in this interface hide something by setting `.hidden = true`, and the consent
+   overlay is `position: fixed; inset: 0` at the top of the stacking order — so a hidden
+   overlay stayed laid out over the whole viewport and swallowed every click on the page.
+   The console could be typed into but not clicked, which is not something you find by
+   testing the API. `!important` is deliberate: it has to beat whatever a component sets. */
+[hidden] {
+  display: none !important;
+}
+
 .ars-root,
 body.ars-root {
   margin: 0;
