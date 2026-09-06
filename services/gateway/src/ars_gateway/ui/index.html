@@ -1,8 +1,16 @@
 <!doctype html>
-<html lang="en">
+<!-- data-theme="dark" is not a preference, it is a declaration.
+     theme.css carries a light-safe palette for consumers that want one, switched on by
+     `prefers-color-scheme: light` unless the document says otherwise. This page hardcodes
+     a dark ground, so on a Mac in Light Mode the tokens went light against it and every
+     panel rendered dark-on-white inside a black console — the interface looked broken,
+     and only on other people's machines. A.R.S's console is dark by design; saying so
+     here is the escape hatch theme.css already provides, rather than fighting it. -->
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>A.R.S — console</title>
 
 <!-- Owned by the artifact-engineer. Loaded optimistically: if it does not exist yet, the
@@ -141,12 +149,52 @@
     background: linear-gradient(180deg, var(--ars-color-bg-elevated), transparent);
   }
   .app__brand { display: flex; align-items: center; gap: var(--ars-space-3); }
-  .app__entity {
-    width: 44px; height: 44px;
-    display: flex; align-items: center; justify-content: center;
+  /* The wordmark's little sibling: a plain ring, not a second entity. Two live canvases
+     would be two render loops for one being. */
+  .app__badge {
+    width: 30px; height: 30px; flex: none;
     border: 1px solid var(--ars-color-border-strong);
     border-radius: 50%;
     box-shadow: var(--ars-glow-accent);
+    background:
+      radial-gradient(circle at 50% 50%,
+        var(--ars-color-accent) 0 14%,
+        transparent 16% 100%);
+  }
+
+  .app__side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ars-space-4);
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* A.R.S is a presence, not a favicon. It was mounted in a 44px header slot, which is
+     the size of a logo — every state it can show was rendering into something too small
+     to read them in. Square, because the being is radial and a letterboxed canvas would
+     draw its rings as ovals. */
+  .app__entity {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    flex: none;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .app__entity::after {
+    /* Seats it on the page instead of leaving it floating in a rectangle of nothing. */
+    content: "";
+    position: absolute; inset: -6%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%,
+      color-mix(in srgb, var(--ars-color-accent) 9%, transparent) 0%,
+      transparent 68%);
+    pointer-events: none;
+    z-index: -1;
+  }
+  @media (max-width: 860px) {
+    /* On a narrow window the console is the product; the being steps down to a strip. */
+    .app__entity { width: 190px; align-self: center; }
   }
   .app__titles h1 {
     margin: 0; font-size: 16px; letter-spacing: 0.12em; text-transform: uppercase;
@@ -426,7 +474,7 @@
   <div id="app" class="app">
     <header class="app__header">
       <div class="app__brand">
-        <div id="entity-mount" class="app__entity" aria-hidden="true"></div>
+        <div id="entity-badge" class="app__badge" aria-hidden="true"></div>
         <div class="app__titles">
           <h1 id="app-title" data-i18n="app.title">A.R.S — console</h1>
           <p id="app-subtitle" class="app__subtitle" data-i18n="app.subtitle"></p>
@@ -451,7 +499,13 @@
 
     <main class="app__main">
       <section id="console-root" class="app__console" aria-label="Command console"></section>
-      <nav id="panels-root" class="app__panels" aria-label="Panels"></nav>
+      <aside class="app__side">
+        <!-- A.R.S itself. Decorative to a screen reader — everything it signals (state,
+             tier, whether the GPU was spent) is also text elsewhere on this page, and a
+             being that narrated its own breathing would be unusable. -->
+        <div id="entity-mount" class="app__entity" aria-hidden="true"></div>
+        <nav id="panels-root" class="app__panels" aria-label="Panels"></nav>
+      </aside>
     </main>
   </div>
 
