@@ -38,6 +38,8 @@ Key design decisions, so the "why" is next to the code that depends on it:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import asyncio
 import json
 import logging
@@ -80,15 +82,30 @@ _RECORD_COLUMNS = (
 
 
 def _build_embedding_backend(config: MemoryConfig) -> EmbeddingBackend:
-    if config.embedding_backend == "hash":
+    # Accept the obvious spellings. The package is called sentence-transformers, so
+    # that is what people write in a .env file, and failing on it produces a stack trace
+    # at startup rather than an assistant.
+    backend = config.embedding_backend.strip().lower().replace("-", "_").rstrip("s")
+    if backend == "hash":
         return HashEmbeddingBackend()
-    if config.embedding_backend == "sentence_transformer":
+    if backend == "sentence_transformer":
         from .embeddings.sentence_transformer_backend import (
             SentenceTransformerEmbeddingBackend,
         )
 
         return SentenceTransformerEmbeddingBackend(config.sentence_transformer_model)
     raise ValueError(f"unknown embedding backend: {config.embedding_backend!r}")
+
+
+@dataclass(frozen=True, slots=True)
+class Scored:
+    """A recall hit with the numbers that produced it."""
+
+    rank: float
+    """The blended score that ordered results: vector + keyword + recency."""
+    cosine: float | None
+    """Raw vector similarity, or None if this row was found by keyword search alone."""
+    record: MemoryRecord
 
 
 class SqliteMemoryStore(MemoryStore):
@@ -112,6 +129,7 @@ class SqliteMemoryStore(MemoryStore):
             recency=config.rank_weight_recency,
         )
         self._lock = asyncio.Lock()
+        self._last_scores: tuple[Scored, ...] = ()
 
     @property
     def vec_backend_active(self) -> bool:
@@ -145,16 +163,106 @@ class SqliteMemoryStore(MemoryStore):
         else:
             vector_index = NumpyBruteForceIndex(conn)
         backend = embedding_backend or _build_embedding_backend(config)
-        return cls(
+        store = cls(
             conn=conn,
             vector_index=vector_index,
             embedding_backend=backend,
             config=config,
             vec_backend_active=vec_backend_active,
         )
+        await store._reconcile_embedding_model()
+        return store
 
     async def close(self) -> None:
         await self._conn.close()
+
+    # --------------------------------------------------------------------------- meta
+
+    async def meta_set(self, key: str, value: str) -> None:
+        """Store a fact *about* the store rather than in it.
+
+        Deliberately not recall-able: a catalogue entry is bookkeeping, and putting it in
+        `memory_records` would make it retrievable as if it were something the user said.
+        """
+        await self._conn.execute(
+            "INSERT INTO memory_meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        await self._conn.commit()
+
+    async def meta_get(self, key: str) -> str | None:
+        cursor = await self._conn.execute(
+            "SELECT value FROM memory_meta WHERE key = ?", (key,)
+        )
+        row = await cursor.fetchone()
+        return row["value"] if row else None
+
+    async def meta_delete(self, key: str) -> bool:
+        cursor = await self._conn.execute("DELETE FROM memory_meta WHERE key = ?", (key,))
+        await self._conn.commit()
+        return bool(cursor.rowcount)
+
+    async def meta_items(self, prefix: str) -> list[tuple[str, str]]:
+        cursor = await self._conn.execute(
+            "SELECT key, value FROM memory_meta WHERE key LIKE ? ESCAPE '\\' ORDER BY key",
+            (f"{_escape_like(prefix)}%",),
+        )
+        return [(row["key"], row["value"]) for row in await cursor.fetchall()]
+
+    async def records_by_uri_prefix(self, prefix: str) -> tuple[MemoryRecord, ...]:
+        """Every live record whose provenance uri starts with `prefix`.
+
+        The catalogue of learned documents is a view over the chunks that actually exist,
+        and this is what makes that possible without a second source of truth.
+        """
+        rows = await self._fetch_rows_where(
+            "provenance_uri LIKE ? ESCAPE '\\' AND superseded_by IS NULL",
+            (f"{_escape_like(prefix)}%",),
+        )
+        return tuple(self._row_to_record(row) for row in rows)
+
+    async def exists(self, record_id: str) -> bool:
+        """Whether a record is still stored. Used by callers that keep their own index
+        into memory and have to notice when something underneath them was deleted."""
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM memory_records WHERE id = ?", (record_id,)
+        )
+        return (await cursor.fetchone()) is not None
+
+    # --------------------------------------------------------------- embedding identity
+
+    async def _reconcile_embedding_model(self) -> int:
+        """Re-embed everything if the model that built this index is not the one loaded.
+
+        Vectors from two different models share a coordinate space the way two people's
+        handwriting shares an alphabet — the numbers line up and mean nothing. A mixed
+        index does not fail, it just returns wrong passages confidently, which is the
+        worst failure mode this system has. So the model's identity is stored next to the
+        index and checked on every open. Cost is one embedding pass over the records the
+        user has, once, on the run after the model changes.
+
+        Returns the number of records re-embedded.
+        """
+        identity = self._embedding.identity
+        recorded = await self.meta_get("embedding_identity")
+        if recorded == identity:
+            return 0
+
+        rows = list(await (await self._conn.execute(
+            "SELECT rowid, text FROM memory_records"
+        )).fetchall())
+        if rows and recorded is not None:
+            logger.warning(
+                "embedding model changed (%s -> %s); re-embedding %d records",
+                recorded, identity, len(rows),
+            )
+        if rows:
+            vectors = await self._embedding.embed_passages([r["text"] for r in rows])
+            for row_, vector in zip(rows, vectors, strict=True):
+                await self._vector_index.upsert(row_["rowid"], vector)
+        await self.meta_set("embedding_identity", identity)
+        return len(rows)
 
     # ------------------------------------------------------------- test/debug helpers
 
@@ -239,7 +347,7 @@ class SqliteMemoryStore(MemoryStore):
         )
         rowid = cursor.lastrowid
         assert rowid is not None
-        vector = await self._embedding.embed(record.text)
+        vector = await self._embedding.embed_passage(record.text)
         await self._vector_index.upsert(rowid, vector)
         await self._conn.execute(
             "INSERT INTO memory_fts (rowid, text) VALUES (?, ?)", (rowid, record.text)
@@ -251,7 +359,7 @@ class SqliteMemoryStore(MemoryStore):
     ) -> tuple[MemoryRecord, ...]:
         lang_attr = language.value if language else None
         async with aspan("memory.recall", limit=limit, language=lang_attr):
-            qvec = await self._embedding.embed(query)
+            qvec = await self._embedding.embed_query(query)
             vector_hits = await self._vector_index.search(
                 qvec, limit=self._config.rank_vector_candidates
             )
@@ -269,7 +377,7 @@ class SqliteMemoryStore(MemoryStore):
             keyword_map = dict(keyword_hits)
             now = now_ms()
 
-            scored: list[tuple[float, aiosqlite.Row]] = []
+            scored: list[tuple[float, float | None, aiosqlite.Row]] = []
             for row in rows:
                 if row["superseded_by"] is not None:
                     continue
@@ -284,12 +392,31 @@ class SqliteMemoryStore(MemoryStore):
                     weights=self._weights,
                     half_life_days=self._config.rank_recency_half_life_days,
                 )
-                scored.append((score, row))
+                scored.append((score, vector_map.get(row["rowid"]), row))
 
-            scored.sort(key=lambda pair: pair[0], reverse=True)
+            scored.sort(key=lambda triple: triple[0], reverse=True)
             top = scored[:limit]
             counter("ars_memory.recall.returned").add(len(top))
-            return tuple(self._row_to_record(row) for _, row in top)
+            self._last_scores = tuple(
+                Scored(rank=rank, cosine=cos, record=self._row_to_record(row))
+                for rank, cos, row in top
+            )
+            return tuple(hit.record for hit in self._last_scores)
+
+    async def recall_scored(
+        self, query: str, *, limit: int = 8, language: Language | None = None
+    ) -> tuple[Scored, ...]:
+        """`recall`, but keeping the numbers.
+
+        A caller that has to decide *whether the match is good enough* — the tiered brain
+        deciding if a document answers the question without waking the model — needs the
+        score, and `MemoryRecord` is frozen so it cannot be smuggled onto the record.
+        Both the blended rank and the raw cosine come back: the rank is what ordered them,
+        the cosine is what a confidence threshold should be calibrated against, because
+        the blend also contains keyword and recency terms that say nothing about meaning.
+        """
+        await self.recall(query, limit=limit, language=language)
+        return self._last_scores
 
     async def _keyword_search(self, query: str, *, limit: int) -> list[tuple[int, float]]:
         match_expr = _fts_match_expr(query)

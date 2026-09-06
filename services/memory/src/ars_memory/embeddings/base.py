@@ -42,6 +42,33 @@ class EmbeddingBackend(ABC):
         """Default: sequential `embed`. Real backends should override for batching."""
         return [await self.embed(t) for t in texts]
 
+    # -- asymmetric retrieval ----------------------------------------------------------
+    #
+    # A question and the passage that answers it are not the same kind of text, and the
+    # models that are good at matching them are trained knowing which is which. Backends
+    # that do not care (the hash double, symmetric models) inherit these and nothing
+    # changes; a backend that does care overrides them. Callers must say which side they
+    # are on rather than reaching for `embed` directly, because getting it backwards is
+    # silent — it does not fail, it just retrieves worse.
+
+    async def embed_query(self, text: str) -> np.ndarray:
+        """Embed text that is being searched *with* (a question)."""
+        return await self.embed(text)
+
+    async def embed_passage(self, text: str) -> np.ndarray:
+        """Embed text that is being searched *for* (a remembered passage)."""
+        return await self.embed(text)
+
+    async def embed_passages(self, texts: Sequence[str]) -> list[np.ndarray]:
+        return [await self.embed_passage(t) for t in texts]
+
+    @property
+    def identity(self) -> str:
+        """What produced these vectors. Stored alongside the index: vectors from two
+        different models are not comparable, and a silently mixed index returns
+        confident nonsense."""
+        return type(self).__name__
+
 
 def normalize(vector: np.ndarray) -> np.ndarray:
     """L2-normalize, guarding the zero-vector edge case (empty/whitespace-only text)."""

@@ -16,11 +16,17 @@ class MemoryConfig(BaseSettings):
     data_dir: Path = Path("./var")
     db_filename: str = "memory.db"
 
-    embedding_backend: str = "hash"
-    """"hash" (default, deterministic, no download) or "sentence_transformer" (real,
-    multilingual, downloads/loads weights on first use — must be opted into explicitly,
-    never the default, so a fresh checkout never touches the network)."""
-    sentence_transformer_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    embedding_backend: str = "sentence_transformer"
+    """Real multilingual embeddings by default. The alternative, "hash", is a test
+    double: it matches on shared substrings, so "cât este chiria" would never find an
+    English lease. A.R.S is bilingual and the document tier is only as good as this, so
+    the real backend is the default and the first run downloads weights (~120 MB)."""
+
+    sentence_transformer_model: str = "intfloat/multilingual-e5-small"
+    """Chosen by measurement — `research/benchmarks/retrieval_calibration.py` — because
+    it is the one whose relevant and irrelevant scores actually separate, in Romanian as
+    well as English. Changing this invalidates every stored vector; the store notices and
+    re-embeds. Re-run the benchmark and update the constants in the gateway's brain."""
 
     # --- hybrid ranking weights (see ars_memory.ranking for the formula) ---
     rank_weight_vector: float = 0.55
