@@ -82,8 +82,15 @@ async def test_a_two_word_utterance_cannot_flip_the_conversation_language():
     second = (await transcribe(engine, 400))[-1]
     assert first.language is Language.RO
     assert second.language is Language.RO, "a 0.45-confidence single word flipped the language"
-    assert second.language_confidence == pytest.approx(0.55)
     assert "refused switch" in engine.arbiter.history[-1].reason
+
+    # The confidence reported is in the language we KEPT, and the mock has no distribution
+    # to offer, so it is an estimate: the 0.55 the detector did not claim, spread over the
+    # languages that were not detected. It used to be the whole 0.55 attributed to Romanian
+    # alone, which was exactly right for two languages and an overstatement for three.
+    others = len(SUPPORTED_LANGUAGES) - 1
+    assert second.language_confidence == pytest.approx((1.0 - 0.45) / others)
+    assert second.language_confidence < 1.0 - 0.45
 
 
 def test_arbiter_switch_rules():
@@ -113,16 +120,21 @@ def test_a_pinned_session_language_outranks_detection():
 def test_detection_is_constrained_to_the_supported_languages():
     """Whisper reports Italian for Romanian audio often enough to matter. Constrain first,
     argmax second — otherwise 'auto-detect' picks a language with no voice and no prompts."""
-    language, confidence = constrain_probabilities(
+    language, confidence, scores = constrain_probabilities(
         {"it": 0.51, "ro": 0.30, "en": 0.10, "nl": 0.09}, SUPPORTED_LANGUAGES
     )
     assert language is Language.RO
     assert confidence == pytest.approx(0.75)
+    # The rest of the distribution comes back too, because with three languages a caller
+    # that keeps a different one cannot recover its probability by subtraction.
+    assert set(scores) == set(SUPPORTED_LANGUAGES)
+    assert sum(scores.values()) == pytest.approx(1.0)
 
 
 def test_constrain_handles_a_distribution_with_no_supported_language():
-    language, confidence = constrain_probabilities({"it": 1.0}, SUPPORTED_LANGUAGES)
+    language, confidence, scores = constrain_probabilities({"it": 1.0}, SUPPORTED_LANGUAGES)
     assert language is Language.EN and confidence == 0.0
+    assert set(scores) == set(SUPPORTED_LANGUAGES) and not any(scores.values())
 
 
 def test_word_count_handles_diacritics():

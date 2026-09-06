@@ -101,6 +101,15 @@ function parseColor(str, fallback) {
 
 const mixc = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 
+/** Push a colour away from its own luminance. The token ramp is tuned for text
+ *  on a dark surface, so it is deliberately pale; additive rendering plus bloom
+ *  then washes it to white and every tier looks the same. This buys the hue
+ *  back without touching the tokens. */
+function saturate(c, k) {
+  const l = c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
+  return [clamp(l + (c[0] - l) * k, 0, 1), clamp(l + (c[1] - l) * k, 0, 1), clamp(l + (c[2] - l) * k, 0, 1)];
+}
+
 /* --- state targets ------------------------------------------------------
    The whole personality of the being is this table. Every number is a target
    that a spring or an exponential chases, so states blend instead of cutting.
@@ -185,7 +194,6 @@ uniform float uRingGain[8];
 uniform int   uLevelSeg;  // detent ticks lit on the level ring (acting)
 uniform float uMinW;      // half-width floor, in unit space, = ~0.6px at this size
 uniform float uDetail;    // 0 = 44px favicon, 1 = full centre-stage assembly
-uniform int   uStage;     // debug: stop after block N and show the buffer
 ${GLSL_COMMON}
 
 /* Machined ring assembly. Radius, half-width, tick count, duty cycle. */
@@ -209,7 +217,13 @@ float sdHex(vec2 p, float r){
   return length(p) * sign(p.y);
 }
 
-/* Anti-aliased fill of a signed distance, one pixel wide, at any resolution.
+/* NOTE — every smoothstep in this file is written edge0 < edge1 and inverted
+   by hand where a falling ramp is wanted. GLSL leaves smoothstep(a, b, x)
+   UNDEFINED for a >= b, and it is not a theoretical worry: written the
+   reversed way, the speaking petals' inner fill painted two grey wedges from
+   the core to the edge of the frame on ANGLE. Do not "simplify" these back.
+
+   Anti-aliased fill of a signed distance, one pixel wide, at any resolution.
    The clamp is not cosmetic: for a distance that depends on the ANGLE (the
    index chevron, the speaking petals) fwidth() explodes near the centre, where
    one pixel spans a large arc. Unclamped, smoothstep(w,-w,d) then returns ~0.5
@@ -219,7 +233,7 @@ float sdHex(vec2 p, float r){
    more. */
 float band(float d){
   float w = clamp(fwidth(d), uMinW * 0.5, uMinW * 4.0) + 1e-7;
-  return smoothstep(w, -w, d);
+  return 1.0 - smoothstep(-w, w, d);
 }
 
 /* Periodic segment mask centred on 0 so the fract() seam always lands in a gap. */
@@ -227,7 +241,7 @@ float arcMask(float ang, float count, float duty, float rot){
   float t = fract((ang / TAU + rot) * count + 0.5) - 0.5;
   float sd = abs(t) - duty * 0.5;
   float fw = clamp(fwidth(t), 1e-4, 0.08);
-  return smoothstep(fw, -fw, sd);
+  return 1.0 - smoothstep(-fw, fw, sd);
 }
 
 void main(){
@@ -247,7 +261,6 @@ void main(){
   col += uColA * exp(-r0 * 2.6) * 0.045 * uGain;
   col += uColA * exp(-abs(r0 - uCore * 1.35) * 9.0) * 0.05 * (0.5 + uOpen);
 
-  if (uStage == 1) { fragColor = vec4(col * uGain, 1.0); return; }
   /* -- ring assembly ---------------------------------------------------- */
   for (int i = 0; i < 8; i++) {
     if (uRingGain[i] < 0.004) continue;
@@ -261,10 +274,9 @@ void main(){
     float g = uRingGain[i] * mask * am;
     /* the heavy rings pick up a machined top-light so they read as metal */
     float shade = 0.72 + 0.45 * cos(a0 - 1.9);
-    col += mix(uColA, uColB, 0.30) * g * shade;
+    col += mix(uColA, uColB, 0.30) * g * shade * 0.78;
   }
 
-  if (uStage == 2) { fragColor = vec4(col * uGain, 1.0); return; }
   /* bolts on the outer bezel — small, deliberate, mechanical */
   {
     float R = RR[6] * sp;
@@ -273,7 +285,6 @@ void main(){
     col += mix(uColB, vec3(1.0), 0.3) * band(length(bp) - max(0.0055, uMinW * 1.6)) * 0.75 * uRingGain[6] * uDetail;
   }
 
-  if (uStage == 3) { fragColor = vec4(col * uGain, 1.0); return; }
   /* level ring — the being's own VU. Continuous when listening/speaking,
      stepped into detents when acting, so "working" never looks like "hearing". */
   {
@@ -284,13 +295,12 @@ void main(){
     float stepped = float(uLevelSeg) / 24.0;
     float lvl = mix(sweep, stepped, uAct);
     float fw = clamp(fwidth(ang), 1e-4, 0.2);
-    float on = smoothstep(lvl + fw, lvl - fw, ang);
+    float on = 1.0 - smoothstep(lvl - fw, lvl + fw, ang);
     float ticks = mix(1.0, arcMask(a0, 24.0, 0.55, uRingRot[4]), uAct);
-    col += mix(uColB, vec3(1.0), 0.25) * band(d) * on * ticks * (0.6 + 0.9 * uIntensity);
+    col += mix(uColB, vec3(1.0), 0.10) * band(d) * on * ticks * (0.6 + 0.9 * uIntensity);
     col += uColA * band(abs(r0 - R) - max(0.0018, uMinW * 0.8)) * 0.25;
   }
 
-  if (uStage == 4) { fragColor = vec4(col * uGain, 1.0); return; }
   /* index marker — a chevron that points where A.R.S is attending. This is the
      single cheapest cue that makes it feel aware rather than decorative. */
   {
@@ -305,10 +315,9 @@ void main(){
     float w = 0.055;
     float taper = 1.0 - smoothstep(0.0, w, abs(t));
     float d = abs(r0 - R - taper * 0.018) - max(0.0035, uMinW) * taper;
-    col += mix(uColB, vec3(1.0), 0.35) * band(d) * taper * (0.55 + 0.6 * length(uLook)) * 0.0;
+    col += mix(uColB, vec3(1.0), 0.35) * band(d) * taper * (0.55 + 0.6 * length(uLook));
   }
 
-  if (uStage == 5) { fragColor = vec4(col * uGain, 1.0); return; }
   /* -- containment shell: a hard hexagon that appears when it opens up --- */
   {
     float amt = max(uOpen * 0.55, uHazard);
@@ -320,15 +329,13 @@ void main(){
     }
   }
 
-  if (uStage == 6) { fragColor = vec4(col * uGain, 1.0); return; }
   /* -- listening: wavefronts travelling INWARD, it is taking something in - */
   if (uOpen > 0.01) {
     float wf = fract(r0 * 3.4 + uTime * 0.55);
-    float ring = smoothstep(0.86, 1.0, wf) * smoothstep(1.02 * sp, 0.30, r0);
+    float ring = smoothstep(0.86, 1.0, wf) * (1.0 - smoothstep(0.30, 1.02 * sp, r0));
     col += uColA * ring * uOpen * 0.10 * (0.4 + uIntensity);
   }
 
-  if (uStage == 7) { fragColor = vec4(col * uGain, 1.0); return; }
   /* -- the crystalline core -------------------------------------------- */
   vec2 q = uv - uLook * 0.014;
   float rq = length(q);
@@ -340,7 +347,7 @@ void main(){
   float af = mod(aq + uCoreRot, kseg) - kseg * 0.5;
   vec2 fq = vec2(cos(af), sin(af)) * rq;
 
-  float coreMask = smoothstep(cr, cr * 0.80, rq);
+  float coreMask = 1.0 - smoothstep(cr * 0.80, cr, rq);
   if (coreMask > 0.001) {
     vec2 lp = fq * (mix(3.0, 7.2, uDetail) / max(cr, 0.06));
     vec4 hx = getHex(lp + vec2(uTime * 0.04, 0.0));
@@ -349,8 +356,8 @@ void main(){
     /* activity propagates outward from the centre — a thought crossing it */
     float wave = sin(rq * 30.0 - uTime * (1.5 + 5.0 * uThink) + cid * TAU);
     float act = smoothstep(0.15, 0.95, wave) * (0.20 + 0.80 * uThink) * (0.5 + 0.9 * cid);
-    float wire = smoothstep(0.075, 0.008, ed);
-    float fill = smoothstep(0.34, 0.03, ed);
+    float wire = 1.0 - smoothstep(0.008, 0.075, ed);
+    float fill = 1.0 - smoothstep(0.03, 0.34, ed);
     float lattice = wire * (0.45 + 1.15 * act) + fill * act * 0.40;
     col += mix(uColA, uColB, clamp(act, 0.0, 1.0) * 0.75) * lattice * coreMask * 1.25;
     /* faceting: the kaleidoscope seams catch the light like cut crystal */
@@ -358,12 +365,10 @@ void main(){
     col += uColB * facet * coreMask * 0.10;
   }
 
-  if (uStage == 8) { fragColor = vec4(col * uGain, 1.0); return; }
   /* core shell + halo */
-  col += mix(uColB, vec3(1.0), 0.30) * band(abs(rq - cr) - max(0.0035, uMinW)) * 1.35;
+  col += mix(uColB, vec3(1.0), 0.12) * band(abs(rq - cr) - max(0.0035, uMinW)) * 1.15;
   col += uColA * exp(-max(rq - cr, 0.0) * 13.0) * 0.20 * uGain;
 
-  if (uStage == 9) { fragColor = vec4(col * uGain, 1.0); return; }
   /* -- the iris: eight machined blades over the lattice ----------------- */
   float apr = cr * (0.10 + 0.74 * uIris);
   float bseg = TAU / 8.0;
@@ -375,15 +380,13 @@ void main(){
   col = mix(col, col * 0.30 + uColDeep * 0.55, bladeZone * 0.72);
   float seam = band(abs(abs(ba) - bseg * 0.5) * rq - max(0.0016, uMinW * 0.7));
   col += uColB * seam * bladeZone * 0.45;
-  col += mix(uColB, vec3(1.0), 0.45) * band(abs(apert) - max(0.0030, uMinW)) * 1.5;
+  col += mix(uColB, vec3(1.0), 0.25) * band(abs(apert) - max(0.0030, uMinW)) * 1.25;
 
-  if (uStage == 10) { fragColor = vec4(col * uGain, 1.0); return; }
   /* nucleus — the light that lives behind the aperture */
   float nu = exp(-pow(rq / max(apr, 0.02), 2.0) * 3.4);
-  col += mix(uColB, vec3(1.0), 0.35) * nu * insideAp * (0.55 + 1.15 * uIntensity);
+  col += mix(uColB, vec3(1.0), 0.22) * nu * insideAp * (0.55 + 1.15 * uIntensity);
   col += vec3(1.0) * exp(-rq * rq / (0.0006 + 0.0055 * (1.0 - uThink))) * (0.35 + 0.85 * uThink);
 
-  if (uStage == 11) { fragColor = vec4(col * uGain, 1.0); return; }
   /* -- speaking: radial petals driven by intensity ---------------------- */
   if (uSpeak > 0.01) {
     float spec = 0.0;
@@ -391,25 +394,27 @@ void main(){
       float fi = float(i);
       spec += sin(aq * (fi * 3.0 + 1.0) + uTime * (2.2 + fi * 1.9) + fi * 1.7) / fi;
     }
-    spec = spec * 0.42 + 0.5;
+    /* The four harmonics sum to as low as -2.08, which put the petal radius
+       INSIDE the core and silently reversed the smoothstep below — two grey
+       wedges across the frame, only while speaking, only at some phases. Rectify
+       the waveform instead: a VU that bottoms out reads better anyway. */
+    spec = clamp(spec * 0.42 + 0.5, 0.0, 1.4);
     float pl = cr + 0.018 + (0.020 + 0.20 * uIntensity) * spec;
     col += mix(uColA, uColB, 0.55) * band(abs(rq - pl) - max(0.0032, uMinW)) * uSpeak * (0.6 + 1.1 * uIntensity);
-    col += uColA * smoothstep(pl, cr, rq) * uSpeak * 0.10 * uIntensity;
+    col += uColA * (1.0 - smoothstep(cr, pl, rq)) * uSpeak * 0.10 * uIntensity;
   }
 
-  if (uStage == 12) { fragColor = vec4(col * uGain, 1.0); return; }
   /* -- acting: actuator ticks that extend and retract -------------------- */
   if (uAct > 0.01) {
     float R = RR[5] * sp;
     float ext = 0.012 + 0.020 * (0.5 + 0.5 * sin(uTime * 3.2));
     float t = fract((a0 / TAU + uRingRot[5]) * 12.0 + 0.5) - 0.5;
     float w = clamp(fwidth(t), 1e-4, 0.25);
-    float tick = smoothstep(w, -w, abs(t) - 0.035);
+    float tick = 1.0 - smoothstep(-w, w, abs(t) - 0.035);
     float d = abs(r0 - (R + ext * 0.5)) - ext * 0.5;
     col += mix(uColA, uColB, 0.5) * band(d) * tick * uAct * 0.7;
   }
 
-  if (uStage == 13) { fragColor = vec4(col * uGain, 1.0); return; }
   /* -- alert: hazard chevrons, containment, scan bar --------------------- */
   if (uHazard > 0.01) {
     float R = 0.925 * sp;
@@ -464,7 +469,7 @@ void main(){
 
   float head = life * 1.28;
   float g = exp(-max(head - s, 0.0) * 6.5) * step(s, head);
-  float env = smoothstep(0.0, 0.05, life) * smoothstep(1.0, 0.70, life);
+  float env = smoothstep(0.0, 0.05, life) * (1.0 - smoothstep(0.70, 1.0, life));
 
   vG = g * env * alive;
   vSide = side;
@@ -809,8 +814,9 @@ class Model {
     let a;
     if (this.state === 'alert') a = st;
     else if (this.state === 'acting') a = tierCol ? mixc(tierCol, st, 0.72) : st;
-    else if (tierCol) a = mixc(tierCol, st, 0.32);
+    else if (tierCol) a = mixc(tierCol, st, 0.22);
     else a = st;
+    a = saturate(a, 1.35);
     /* The highlight has to stay the SAME hue, only brighter. Mixing toward
        white (or toward an ice-white rim token) is what turns a violet
        "local model" turn into generic sci-fi grey — normalise the body colour
@@ -950,7 +956,6 @@ class GLRenderer {
     /* Per-pass gates. Public on purpose: it is how you bisect a rendering
        artefact in ten seconds from the browser console instead of guessing. */
     this.passes = { scene: true, filaments: true, motes: true, bloom: true };
-    this.stage = 0;
 
     this._lost = false;
     this._onLost = (ev) => { ev.preventDefault(); this._lost = true; };
@@ -1006,7 +1011,6 @@ class GLRenderer {
     gl.uniform1i(s.u.uLevelSeg, u.levelSeg);
     gl.uniform1f(s.u.uMinW, u.minW);
     gl.uniform1f(s.u.uDetail, u.detail);
-    gl.uniform1i(s.u.uStage, this.stage | 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     /* ---- pass 2: filaments, additive ---- */

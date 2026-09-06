@@ -188,7 +188,9 @@ class FasterWhisperEngine(AsrEngine):
         )
         return " ".join(segment.text.strip() for segment in segments).strip()
 
-    def _detect_language(self, audio: np.ndarray) -> tuple[Language, float]:
+    def _detect_language(
+        self, audio: np.ndarray
+    ) -> tuple[Language, float, dict[Language, float] | None]:
         """Detect, constrained to the languages A.R.S supports.
 
         Two code paths because faster-whisper moved this API: `detect_language` exists in
@@ -211,12 +213,15 @@ class FasterWhisperEngine(AsrEngine):
         probs = dict(getattr(info, "all_language_probs", None) or {})
         if probs:
             return constrain_probabilities(probs, self.supported_languages)
+        # Last resort: a single label and its probability, with no distribution behind it.
+        # `None` for the scores says exactly that, so the arbiter estimates rather than
+        # pretending to know.
         detected = getattr(info, "language", Language.EN.value)
         confidence = float(getattr(info, "language_probability", 0.0))
         for lang in self.supported_languages:
             if lang.value == detected:
-                return lang, confidence
-        return self.arbiter.current, 0.0
+                return lang, confidence, None
+        return self.arbiter.current, 0.0, None
 
     def _decode_final(
         self, pcm: bytes, language: Language | None, audio_ms: float
@@ -226,9 +231,9 @@ class FasterWhisperEngine(AsrEngine):
         audio = self._audio(pcm)
 
         if language is not None:
-            resolved, confidence = language, 1.0
+            resolved, confidence, scores = language, 1.0, None
         else:
-            detected, detected_confidence = self._detect_language(audio)
+            detected, detected_confidence, scores = self._detect_language(audio)
             # The text is not known yet, so the word count that gates a weak switch is not
             # available. Decode in the detected language first, then let the arbiter judge
             # with the transcript in hand; if it refuses the switch, re-decode. The re-decode
@@ -249,7 +254,7 @@ class FasterWhisperEngine(AsrEngine):
         text = " ".join(s.text.strip() for s in collected).strip()
 
         if language is None:
-            decision = self.arbiter.decide(resolved, confidence, text=text)
+            decision = self.arbiter.decide(resolved, confidence, text=text, scores=scores)
             if decision.language is not resolved:
                 log.info("language arbiter: %s", decision.reason)
                 segments, _info = model.transcribe(

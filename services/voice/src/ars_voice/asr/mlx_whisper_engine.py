@@ -296,8 +296,10 @@ class MlxWhisperEngine(AsrEngine):
             raise NoLanguageDistribution(
                 f"{self.repo} returned no language distribution; refusing to guess a language"
             )
-        detected, confidence = constrain_probabilities(probabilities, self.supported_languages)
-        return detected, confidence, result.audio_features
+        detected, confidence, scores = constrain_probabilities(
+            probabilities, self.supported_languages
+        )
+        return detected, confidence, scores, result.audio_features
 
     def _decode_partial(self, pcm: bytes, language: Language) -> str:
         self._partial_running += 1
@@ -336,11 +338,11 @@ class MlxWhisperEngine(AsrEngine):
             # Language id runs on the first 30 s: it is a property of the speaker, not of the
             # tail of a long utterance, and running it on the whole thing would cost an extra
             # encoder pass per chunk for no gain.
-            detected, confidence, features = self._detect(self._mel(audio))
+            detected, confidence, scores, features = self._detect(self._mel(audio))
             text = self._transcribe_text(
                 audio, detected, long_form=long_form, features=None if long_form else features
             )
-            decision = self.arbiter.decide(detected, confidence, text=text)
+            decision = self.arbiter.decide(detected, confidence, text=text, scores=scores)
             if decision.language is not detected:
                 log.info("language arbiter: %s", decision.reason)
                 # Re-decode in the language the arbiter kept. Free of an encoder pass on the

@@ -16,10 +16,15 @@ alongside the original, and let every question match a passage in its own langua
 cross-lingual problem becomes a same-language problem, which is the one the embedding
 model is measured to be good at.
 
-Two arms, same fixtures, same gate:
+Three arms, same fixtures, same gate:
 
-    A  ONE-COPY     German document indexed as-is           (what ships today)
-    B  THREE-COPY   German + EN translation + RO translation (the proposal)
+    A  ONE-COPY     German document indexed as-is             (what ships today)
+    B  THREE-COPY   German + EN translation + RO translation  (translate the document)
+    C  QUERY-SIDE   German only; the question is translated into German at query time
+
+C is the arm that looks cheaper — no index growth, no ingest job — and it is the one to
+check rather than assume, because it moves a translation onto the hot path of a tier
+budgeted at ~20 ms.
 
 It prints, per arm and per question language, the calibrated confidence the tier would
 compute, whether the 0.85 gate fires, and whether the 0.04 ambiguity margin fires. The
@@ -129,6 +134,52 @@ def gate(hits: list[Hit], *, dedupe_origin: bool) -> tuple[bool, str, Hit, float
     return True, f"answered at {top.confidence:.0%}", top, runner_conf
 
 
+async def measure_query_side(doc: str, backend: SentenceTransformerEmbeddingBackend,
+                             translator, pivot: str = "de") -> dict:
+    """Arm C: index one language, translate the incoming question into it.
+
+    Costs nothing at ingest and nothing in index size, and costs a full translation on
+    every question that reaches tier 1 — a tier whose entire justification is that it is
+    ~20 ms and therefore cheaper than waking the model.
+    """
+    passages = [Passage(pivot, i, p) for i, p in enumerate(
+        chunk(normalise(doc), size=CHUNK_SIZE, overlap=min(180, CHUNK_SIZE // 4)))]
+    matrix = np.vstack(await backend.embed_many(
+        [E5_PASSAGE_PREFIX + p.text for p in passages]))
+
+    print(f"\n=== arm C (query-side translation into {pivot}) — "
+          f"{len(passages)} passages ===")
+    answered: dict[str, int] = {}
+    asked: dict[str, int] = {}
+    confidences: dict[str, list[float]] = {}
+    latencies: list[float] = []
+    for question, qlang in GERMAN_DOC_QUESTIONS:
+        if qlang == pivot:
+            translated, ms = question, 0.0
+        else:
+            translated, _first, ms = await translator.translate(question, qlang, pivot)
+            latencies.append(ms)
+        qvec = await backend.embed(E5_QUERY_PREFIX + translated)
+        hits = rank(matrix, passages, qvec)
+        fires, why, top, runner = gate(hits, dedupe_origin=True)
+        asked[qlang] = asked.get(qlang, 0) + 1
+        answered[qlang] = answered.get(qlang, 0) + int(fires)
+        confidences.setdefault(qlang, []).append(top.confidence)
+        print(f"  {qlang:>6}  {top.confidence:5.0%} {top.cosine:6.3f}  {ms:5.0f}ms  "
+              f"{'YES' if fires else ' no':>5}  {question}  ->  {translated}")
+
+    noise = []
+    for question in IRRELEVANT_QUESTIONS:
+        translated, _f, _ms = await translator.translate(question, "en", pivot)
+        qvec = await backend.embed(E5_QUERY_PREFIX + translated)
+        noise.append(rank(matrix, passages, qvec)[0].cosine)
+    print(f"  query-translation latency: p50 {statistics.median(latencies):.0f} ms, "
+          f"max {max(latencies):.0f} ms  (tier 1 is budgeted at ~20 ms)")
+    return {"asked": asked, "answered": answered, "confidences": confidences,
+            "noise_max": max(noise), "passages": len(passages),
+            "query_ms_p50": statistics.median(latencies)}
+
+
 async def measure_arm(name: str, copies: dict[str, str],
                       backend: SentenceTransformerEmbeddingBackend,
                       *, dedupe_origin: bool) -> dict:
@@ -171,18 +222,22 @@ async def measure_arm(name: str, copies: dict[str, str],
             "noise_max": max(noise), "passages": len(passages)}
 
 
-def verdict(a: dict, b: dict) -> None:
+def verdict(a: dict, b: dict, c: dict) -> None:
     print("\n=== verdict ===")
-    print(f"  {'q lang':>6}  {'arm A answered':>16}  {'arm B answered':>16}  "
-          f"{'A mean conf':>12}  {'B mean conf':>12}")
+    print(f"  {'q lang':>6}  {'A as-is':>9}  {'B doc-xlat':>11}  {'C query-xlat':>13}  "
+          f"{'A conf':>7} {'B conf':>7} {'C conf':>7}")
     for lang in ("de", "en", "ro"):
-        pa = f"{a['answered'].get(lang, 0)}/{a['asked'].get(lang, 0)}"
-        pb = f"{b['answered'].get(lang, 0)}/{b['asked'].get(lang, 0)}"
-        ma = statistics.mean(a["confidences"].get(lang, [0.0]))
-        mb = statistics.mean(b["confidences"].get(lang, [0.0]))
-        print(f"  {lang:>6}  {pa:>16}  {pb:>16}  {ma:>11.0%}  {mb:>11.0%}")
+        row = []
+        for arm in (a, b, c):
+            row.append(f"{arm['answered'].get(lang, 0)}/{arm['asked'].get(lang, 0)}")
+        ma, mb, mc = (statistics.mean(arm["confidences"].get(lang, [0.0]))
+                      for arm in (a, b, c))
+        print(f"  {lang:>6}  {row[0]:>9}  {row[1]:>11}  {row[2]:>13}  "
+              f"{ma:>6.0%} {mb:>6.0%} {mc:>6.0%}")
+    print(f"  arm C adds {c['query_ms_p50']:.0f} ms to every tier-1 question; "
+          f"arms A and B add nothing.")
     print(f"  irrelevant question, highest cosine: A {a['noise_max']:.3f}  "
-          f"B {b['noise_max']:.3f}")
+          f"B {b['noise_max']:.3f}  C {c['noise_max']:.3f}")
     gained = sum(b["answered"].values()) - sum(a["answered"].values())
     total = sum(a["asked"].values())
     if b["noise_max"] > 0.83:
@@ -225,7 +280,10 @@ async def main(argv: list[str]) -> int:
     b = await measure_arm("B (three copies, proposed)",
                           {"de": GERMAN_DOC, "en": en, "ro": ro}, backend,
                           dedupe_origin=not args.no_dedupe)
-    verdict(a, b)
+    translator = OllamaTranslator(args.model, temperature=0.1)
+    c = await measure_query_side(GERMAN_DOC, backend, translator)
+    await translator.aclose()
+    verdict(a, b, c)
 
     print("\n--- the English copy the model produced ---")
     print(en)
