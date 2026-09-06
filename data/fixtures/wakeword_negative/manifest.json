@@ -1,0 +1,463 @@
+{
+  "kind": "wakeword_negative",
+  "synthetic": true,
+  "generator": "ars_voice.fixtures",
+  "fixtures": [
+    {
+      "name": "negative_00",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -58.0,
+      "speech_dbfs": -26.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_00.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_01",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -55.0,
+      "speech_dbfs": -24.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_01.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_02",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -52.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_02.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_03",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -49.0,
+      "speech_dbfs": -26.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_03.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_04",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -58.0,
+      "speech_dbfs": -24.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_04.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_05",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -55.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_05.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_06",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -52.0,
+      "speech_dbfs": -26.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_06.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_07",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -49.0,
+      "speech_dbfs": -24.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_07.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_08",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -58.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_08.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_09",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -55.0,
+      "speech_dbfs": -26.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_09.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_10",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -52.0,
+      "speech_dbfs": -24.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_10.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    },
+    {
+      "name": "negative_11",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 4000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 3000,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -49.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic negative: continuous speech-shaped audio, no keyword.",
+      "synthetic": true,
+      "file": "negative_11.wav",
+      "speech_end_ms": 8000,
+      "total_ms": 9000
+    }
+  ]
+}

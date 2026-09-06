@@ -1,0 +1,84 @@
+# Prompt asset registry.
+#
+# Every prompt A.R.S sends is a file listed here. Nothing in services/compute may build a
+# system prompt, a quarantine frame or a filler from an inline string literal — the reason
+# is auditability: when a turn behaves badly, the question "which prompt version produced
+# this" has to be answerable from the telemetry alone.
+#
+# `sha256` is computed at load time, not stored, so a hand-edit cannot go unnoticed in a
+# telemetry trace. Bump `version` (v1 -> v2) by adding a NEW file; never edit a shipped
+# version in place, because eval results are recorded against the version string.
+
+registry_version = "1"
+
+[[asset]]
+id = "system"
+version = "v1"
+language = "en"
+path = "system.en.v1.md"
+
+[[asset]]
+id = "system"
+version = "v1"
+language = "ro"
+path = "system.ro.v1.md"
+
+[[asset]]
+id = "quarantine"
+version = "v1"
+language = "en"
+path = "quarantine.en.v1.md"
+
+[[asset]]
+id = "quarantine"
+version = "v1"
+language = "ro"
+path = "quarantine.ro.v1.md"
+
+[[asset]]
+id = "quarantine_flag"
+version = "v1"
+language = "en"
+path = "quarantine_flag.en.v1.md"
+
+[[asset]]
+id = "quarantine_flag"
+version = "v1"
+language = "ro"
+path = "quarantine_flag.ro.v1.md"
+
+[[asset]]
+id = "memory_frame"
+version = "v1"
+language = "en"
+path = "memory_frame.en.v1.md"
+
+[[asset]]
+id = "memory_frame"
+version = "v1"
+language = "ro"
+path = "memory_frame.ro.v1.md"
+
+[[asset]]
+id = "preferences_frame"
+version = "v1"
+language = "en"
+path = "preferences_frame.en.v1.md"
+
+[[asset]]
+id = "preferences_frame"
+version = "v1"
+language = "ro"
+path = "preferences_frame.ro.v1.md"
+
+[[asset]]
+id = "tool_use"
+version = "v1"
+language = "en"
+path = "tool_use.en.v1.md"
+
+[[asset]]
+id = "tool_use"
+version = "v1"
+language = "ro"
+path = "tool_use.ro.v1.md"

@@ -1,0 +1,32 @@
+[project]
+name = "ars-workspace"
+version = "0.1.0"
+description = "A.R.S — a private, local-first voice and compute assistant"
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = ["packages/protocol", "packages/core", "packages/telemetry", "services/*", "apps/cli"]
+
+[tool.uv.sources]
+ars-protocol = { workspace = true }
+ars-core = { workspace = true }
+ars-telemetry = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.7", "mypy>=1.13", "anyio>=4"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF"]
+ignore = ["S101"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

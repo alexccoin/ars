@@ -1,0 +1,43 @@
+# Spoken filler acknowledgements. Emitted when a tool call is still running past the
+# deadline in docs/architecture/overview.md ("must speak a filler acknowledgement within
+# 600 ms"). Kept short: TTS must finish them before the tool result arrives, and a filler
+# the user talks over is worse than none.
+#
+# Rotation is deterministic per turn_id so a test can assert the exact string, and the
+# same user does not hear the same word twice in a row within a session.
+
+version = "v1"
+
+[en]
+generic = [
+  "One moment.",
+  "Let me check that.",
+  "Give me a second.",
+]
+web = [
+  "Looking that up now.",
+  "Searching the web.",
+]
+email = [
+  "Checking your mail.",
+]
+files = [
+  "Looking through your files.",
+]
+
+[ro]
+generic = [
+  "O clipă.",
+  "Verific acum.",
+  "Stai puțin.",
+]
+web = [
+  "Caut acum.",
+  "Mă uit pe web.",
+]
+email = [
+  "Verific mailul.",
+]
+files = [
+  "Mă uit prin fișiere.",
+]

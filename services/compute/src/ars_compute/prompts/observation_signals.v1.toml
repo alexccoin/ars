@@ -1,0 +1,133 @@
+# Evidence patterns for behaviour learning. Versioned data, not inline regexes.
+#
+# `strength` is how much one match contributes to confidence. Deliberately conservative:
+# memory.py requires >= 2 independent turns AND confidence >= 0.6 before A.R.S may even
+# ask, so a single strong match must not reach the threshold on its own.
+#
+# Patterns are matched case-insensitively against the user's own utterance only. Text
+# from an EXTERNAL block can never become evidence — an attacker must not be able to
+# teach A.R.S a preference by putting a sentence on a web page.
+
+version = "v1"
+
+[[pattern]]
+signal = "style.shorter"
+lang = "en"
+strength = 0.35
+regex = "\\b(shorter|too long|be brief|briefly|keep it short|less detail|tl;?dr|get to the point)\\b"
+
+[[pattern]]
+signal = "style.shorter"
+lang = "ro"
+strength = 0.35
+regex = "\\b(mai scurt|prea lung|pe scurt|concis|fii scurt|treci la subiect|mai putin|mai pu[țt]in text)\\b"
+
+[[pattern]]
+signal = "style.more_detail"
+lang = "en"
+strength = 0.35
+regex = "\\b(more detail|explain more|elaborate|go deeper|too short|full answer)\\b"
+
+[[pattern]]
+signal = "style.more_detail"
+lang = "ro"
+strength = 0.35
+regex = "\\b(mai multe detalii|explic[ăa].{0,12}mai mult|dezvolt[ăa]|prea scurt|mai pe larg)\\b"
+
+[[pattern]]
+signal = "style.less_formal"
+lang = "en"
+strength = 0.3
+regex = "\\b(stop being so formal|less formal|talk normally|don'?t be so polite|plain english)\\b"
+
+[[pattern]]
+signal = "style.less_formal"
+lang = "ro"
+strength = 0.3
+regex = "\\b(nu mai fi a[țt]?[âa]t de formal|mai relaxat|vorbe[șs]te normal|pe [șs]leau|f[ăa]r[ăa] atâtea polite[țt]uri)\\b"
+
+[[pattern]]
+signal = "language.prefer_ro"
+lang = "any"
+strength = 0.4
+regex = "\\b(vorbe[șs]te.{0,10}rom[âa]n|r[ăa]spunde.{0,10}[îi]n rom[âa]n|speak romanian|in romanian please|answer in romanian)\\b"
+
+[[pattern]]
+signal = "language.prefer_en"
+lang = "any"
+strength = 0.4
+regex = "\\b(speak english|in english please|answer in english|vorbe[șs]te.{0,10}englez|r[ăa]spunde.{0,10}[îi]n englez)\\b"
+
+[[pattern]]
+signal = "language.keep_ro_with_english_terms"
+lang = "any"
+strength = 0.4
+regex = "\\b(nu.{0,15}traduce.{0,15}termen|nu.{0,12}schimba.{0,12}limba|stay in romanian|don'?t switch to english|r[ăa]m[âa]i [îi]n rom[âa]n)\\b"
+
+[[pattern]]
+signal = "proactivity.less"
+lang = "en"
+strength = 0.35
+regex = "\\b(don'?t interrupt|stop interrupting|only tell me if|leave me alone|don'?t bother me)\\b"
+
+[[pattern]]
+signal = "proactivity.less"
+lang = "ro"
+strength = 0.35
+regex = "\\b(nu m[ăa] [îi]ntrerupe|nu m[ăa] mai deranja|spune-mi doar dac[ăa]|las[ăa]-m[ăa] [îi]n pace)\\b"
+
+[[pattern]]
+signal = "proactivity.more"
+lang = "en"
+strength = 0.3
+regex = "\\b(tell me when|let me know when|remind me|warn me if|keep me posted)\\b"
+
+[[pattern]]
+signal = "proactivity.more"
+lang = "ro"
+strength = 0.3
+regex = "\\b(spune-mi c[âa]nd|anun[țt][ăa]-m[ăa]|aminte[șs]te-mi|avertizeaz[ăa]-m[ăa])\\b"
+
+[[pattern]]
+signal = "confirmation.always_ask"
+lang = "en"
+strength = 0.4
+regex = "\\b(ask me first|always ask|check with me|confirm with me|don'?t send.{0,20}without asking)\\b"
+
+[[pattern]]
+signal = "confirmation.always_ask"
+lang = "ro"
+strength = 0.4
+regex = "\\b([îi]ntreab[ăa]-m[ăa] [îi]nt[âa]i|[îi]ntreab[ăa]-m[ăa] mereu|cere-mi voie|confirm[ăa] cu mine|nu trimite.{0,20}f[ăa]r[ăa] s[ăa] m[ăa] [îi]ntrebi)\\b"
+
+[[pattern]]
+signal = "confirmation.act_without_asking"
+lang = "en"
+strength = 0.3
+regex = "\\b(just do it|stop asking me|you don'?t need to ask|go ahead without asking)\\b"
+
+[[pattern]]
+signal = "confirmation.act_without_asking"
+lang = "ro"
+strength = 0.3
+regex = "\\b(f[ăa]-o pur [șs]i simplu|nu m[ăa] mai [îi]ntreba|nu trebuie s[ăa] [îi]ntrebi|d[ăa]-i drumul f[ăa]r[ăa] s[ăa] [îi]ntrebi)\\b"
+
+[[pattern]]
+signal = "schedule.quiet_hours"
+lang = "en"
+strength = 0.4
+capture_hour = true
+regex = "\\b(?:not|nothing|don'?t.{0,20})\\s+after\\s+(\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?)"
+
+[[pattern]]
+signal = "schedule.quiet_hours"
+lang = "ro"
+strength = 0.4
+capture_hour = true
+regex = "\\bnu.{0,25}dup[ăa]\\s+(?:ora\\s+)?(\\d{1,2}(?::\\d{2})?)"
+
+[[pattern]]
+signal = "routing.local_only"
+lang = "any"
+strength = 0.45
+regex = "\\b(don'?t use the cloud|keep it local|stay local|local only|nu folosi cloud|[țt]ine totul local|doar local)\\b"

@@ -1,0 +1,80 @@
+# Behaviour-observation statement templates.
+#
+# The statement is read back to the user verbatim when A.R.S asks to confirm it, so it
+# must be a sentence THEY would recognise as their own: first person, their language,
+# addressed to A.R.S. Never a third-person description of them.
+#
+# Nothing here creates a Preference. These only produce Observation.statement.
+
+version = "v1"
+
+[ask.en]
+template = 'I noticed something. You said: "{statement}" Should I remember that?'
+[ask.ro]
+template = 'Am observat ceva. Ai spus: „{statement}" Să țin minte asta?'
+
+# ---------------------------------------------------------------- style
+[signal."style.shorter"]
+domain = "style"
+en = "You answer me more briefly."
+ro = "Îmi răspunzi mai scurt."
+
+[signal."style.more_detail"]
+domain = "style"
+en = "You give me more detail, not just the short answer."
+ro = "Îmi dai mai multe detalii, nu doar răspunsul scurt."
+
+[signal."style.less_formal"]
+domain = "style"
+en = "You talk to me plainly, without the formal wording."
+ro = "Îmi vorbești pe șleau, fără formulări prea politicoase."
+
+# ---------------------------------------------------------------- language
+[signal."language.prefer_ro"]
+domain = "language"
+en = "You answer me in Romanian."
+ro = "Îmi răspunzi în română."
+
+[signal."language.prefer_en"]
+domain = "language"
+en = "You answer me in English."
+ro = "Îmi răspunzi în engleză."
+
+[signal."language.keep_ro_with_english_terms"]
+domain = "language"
+en = "You stay in Romanian even when I use English technical words."
+ro = "Rămâi în română chiar dacă folosesc termeni tehnici în engleză."
+
+# ---------------------------------------------------------------- proactivity
+[signal."proactivity.less"]
+domain = "proactivity"
+en = "You don't interrupt me unless it matters."
+ro = "Nu mă întrerupi decât dacă e important."
+
+[signal."proactivity.more"]
+domain = "proactivity"
+en = "You tell me about things without waiting for me to ask."
+ro = "Îmi spui lucrurile fără să aștepți să te întreb."
+
+# ---------------------------------------------------------------- confirmation
+[signal."confirmation.always_ask"]
+domain = "confirmation"
+en = "You ask me first before you do anything on my accounts."
+ro = "Mă întrebi întâi, înainte să faci ceva pe conturile mele."
+
+[signal."confirmation.act_without_asking"]
+domain = "confirmation"
+en = "You just do the small things without asking me every time."
+ro = "Faci lucrurile mărunte fără să mă întrebi de fiecare dată."
+
+# ---------------------------------------------------------------- schedule
+[signal."schedule.quiet_hours"]
+domain = "schedule"
+en = "You don't speak to me after {hour}."
+ro = "Nu îmi vorbești după ora {hour}."
+
+# ---------------------------------------------------------------- routing
+[signal."routing.local_only"]
+domain = "routing"
+en = "You keep everything on this machine and don't use the cloud model."
+ro = "Ții totul pe calculatorul ăsta și nu folosești modelul din cloud."

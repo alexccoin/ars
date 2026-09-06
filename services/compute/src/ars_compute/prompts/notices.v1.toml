@@ -1,0 +1,51 @@
+# Strings A.R.S says on its own authority, composed by services/compute from templates.
+#
+# None of these may ever be model-generated. In a tainted turn the model's output is
+# influenced by an attacker, and a security warning written by the attacker is worse than
+# no warning at all. Same reasoning as `GuardDecision.explanation` in the protocol.
+
+version = "v1"
+
+[injection_detected.en]
+text = "One thing first: the content I fetched from {source} contains text that tries to give me instructions — {phrases}. I ignored it. Tell me if you want to see it in full."
+[injection_detected.ro]
+text = "Întâi ceva: conținutul pe care l-am preluat de la {source} conține text care încearcă să îmi dea instrucțiuni — {phrases}. L-am ignorat. Spune-mi dacă vrei să îl vezi în întregime."
+
+[tool_denied.en]
+text = "I wanted to {summary}, but I'm not allowed to: {explanation}"
+[tool_denied.ro]
+text = "Voiam să {summary}, dar nu am voie: {explanation}"
+
+[tool_failed.en]
+text = "I tried to {summary} and it failed. I'll answer with what I already have."
+[tool_failed.ro]
+text = "Am încercat să {summary} și nu a mers. Îți răspund cu ce am deja."
+
+[tool_budget.en]
+text = "I've used all the tool calls I'm allowed in one turn, so I'll stop here and tell you what I found."
+[tool_budget.ro]
+text = "Am folosit toate apelurile de unelte permise într-un tur, așa că mă opresc aici și îți spun ce am găsit."
+
+[backend_down.en]
+text = "The local model isn't responding right now, so I can't answer that. Nothing was sent anywhere."
+[backend_down.ro]
+text = "Modelul local nu răspunde acum, așa că nu pot răspunde. Nu a fost trimis nimic nicăieri."
+
+[cloud_refused.en]
+text = "That would have needed the cloud model, and there's private information in this conversation, so I kept it on this machine and stopped."
+[cloud_refused.ro]
+text = "Pentru asta ar fi fost nevoie de modelul din cloud, iar în conversație sunt informații private, așa că am ținut totul pe calculatorul ăsta și m-am oprit."
+
+[context_overflow.en]
+text = "That's more than I can hold in one turn. Could you break it into smaller pieces?"
+[context_overflow.ro]
+text = "E mai mult decât pot cuprinde într-un singur tur. Poți să îl împarți în bucăți mai mici?"
+
+# Emitted when the taint backstop downgrades a guard ALLOW to ASK for a capability that
+# can carry text off the device. `Capability.exfiltrates_outward` says the control is to
+# "surface the literal query to the user before it leaves", so the literal resource is
+# quoted here rather than summarised — a paraphrase is exactly what an attacker wants.
+[taint_exfiltration.en]
+text = "This conversation has already read text from {source}, so before I {summary} I need you to confirm. What would leave this machine, exactly as it stands, is: {resource}"
+[taint_exfiltration.ro]
+text = "Conversația asta a citit deja text de la {source}, așa că înainte să {summary} am nevoie de confirmarea ta. Ce ar pleca de pe calculatorul ăsta, exact în forma asta, este: {resource}"

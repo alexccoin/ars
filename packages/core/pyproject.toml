@@ -1,0 +1,13 @@
+[project]
+name = "ars-core"
+version = "0.1.0"
+description = "A.R.S engine interfaces and configuration — the seams every backend plugs into"
+requires-python = ">=3.11"
+dependencies = ["ars-protocol", "pydantic>=2.9", "pydantic-settings>=2.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ars_core"]

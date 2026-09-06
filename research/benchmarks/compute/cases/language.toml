@@ -1,0 +1,145 @@
+# Reply-language cases.
+#
+# What is measured here is A.R.S's own behaviour, not a model's fluency: which language
+# the orchestrator resolved, which language it told the backend to answer in, whether the
+# borrowed technical terms survived untouched, and whether Romanian output came out with
+# diacritics. All of that is ours, and all of it is observable with a scripted model.
+#
+# `reply_ro` is deliberately written WITHOUT diacritics in several cases. That is not a
+# typo: it simulates a 4-bit quantised local model dropping them under load, which is the
+# failure the post-processor exists to catch.
+
+suite = "language"
+
+# ---------------------------------------------------------------- plain English
+[[case]]
+id = "lang.en.calendar"
+utterance = "What's on my calendar tomorrow morning?"
+asr_language = "en"
+asr_confidence = 0.96
+expect_language = "en"
+reply_en = "Nothing until eleven, then a call with Radu."
+reply_ro = "Nimic pana la unsprezece, apoi un call cu Radu."
+
+[[case]]
+id = "lang.en.email"
+utterance = "Did the bank send anything this week?"
+asr_language = "en"
+asr_confidence = 0.94
+expect_language = "en"
+reply_en = "Two statements, both on Tuesday."
+reply_ro = "Doua extrase, amandoua marti."
+
+[[case]]
+id = "lang.en.technical"
+utterance = "Can you rebase the staging branch onto main?"
+asr_language = "en"
+asr_confidence = 0.93
+expect_language = "en"
+terms = ["rebase", "staging", "main"]
+reply_en = "I can, but the staging branch has two commits that aren't on main yet."
+reply_ro = "Pot, dar branch-ul de staging are doua commit-uri care nu sunt inca pe main."
+
+# ---------------------------------------------------------------- plain Romanian
+[[case]]
+id = "lang.ro.calendar"
+utterance = "Ce am în calendar mâine dimineață?"
+asr_language = "ro"
+asr_confidence = 0.95
+expect_language = "ro"
+reply_en = "Nothing until eleven, then a call with Radu."
+reply_ro = "Nimic pana la unsprezece, apoi o discutie cu Radu."
+
+[[case]]
+id = "lang.ro.email"
+utterance = "Mi-a trimis banca ceva săptămâna asta?"
+asr_language = "ro"
+asr_confidence = 0.92
+expect_language = "ro"
+reply_en = "Two statements, both on Tuesday."
+reply_ro = "Doua extrase, amandoua marti."
+
+[[case]]
+id = "lang.ro.no_diacritics_input"
+# The user typed without diacritics, as people do on a phone. Still Romanian.
+utterance = "Imi spui cat e ceasul si daca am ceva maine?"
+asr_language = "ro"
+asr_confidence = 0.88
+expect_language = "ro"
+reply_en = "It's ten past nine and you have one thing tomorrow."
+reply_ro = "E noua si zece si maine ai un singur lucru."
+
+# ---------------------------------------------------------------- code switching
+# The cases that motivate the whole module. ASR tags these `en` with mediocre confidence
+# because every content word is English; a naive implementation answers in English.
+[[case]]
+id = "lang.cs.rebase"
+utterance = "Poți să faci un rebase pe branch-ul de staging?"
+asr_language = "en"
+asr_confidence = 0.83
+expect_language = "ro"
+terms = ["rebase", "branch-ul", "staging"]
+reply_en = "Sure, rebasing the staging branch now."
+reply_ro = "Sigur, fac rebase pe branch-ul de staging acum."
+
+[[case]]
+id = "lang.cs.build"
+utterance = "Mi-a picat build-ul, poți să te uiți în logs?"
+asr_language = "en"
+asr_confidence = 0.79
+expect_language = "ro"
+terms = ["build-ul", "logs"]
+reply_en = "The build failed on the test step."
+reply_ro = "Build-ul a picat la pasul de test, iti arat logs-urile."
+
+[[case]]
+id = "lang.cs.pull_request"
+utterance = "Trimite-mi un link cu pull request-ul de ieri, te rog."
+asr_language = "en"
+asr_confidence = 0.81
+expect_language = "ro"
+terms = ["link", "pull request-ul"]
+reply_en = "Here's the link to yesterday's pull request."
+reply_ro = "Uite link-ul catre pull request-ul de ieri."
+
+[[case]]
+id = "lang.cs.deploy"
+utterance = "Am nevoie de un review la commit-urile din sprint-ul asta."
+asr_language = "en"
+asr_confidence = 0.77
+expect_language = "ro"
+terms = ["review", "commit-urile", "sprint-ul"]
+reply_en = "There are nine commits in this sprint."
+reply_ro = "Sunt noua commit-uri in sprint-ul asta, ti le iau la rand."
+
+[[case]]
+id = "lang.cs.deploy_prod"
+utterance = "Poți să dai deploy pe production după ce trece pipeline-ul?"
+asr_language = "en"
+asr_confidence = 0.85
+expect_language = "ro"
+terms = ["deploy", "production", "pipeline-ul"]
+reply_en = "I'll deploy once the pipeline is green."
+reply_ro = "Dau deploy pe production imediat ce trece pipeline-ul."
+
+# ---------------------------------------------------------------- the opposite error
+# English sentences with no Romanian in them must NOT be pulled into Romanian by an
+# over-eager matrix detector. A one-sided fix is not a fix.
+[[case]]
+id = "lang.en.short"
+utterance = "Thanks, that's all."
+asr_language = "en"
+asr_confidence = 0.9
+expect_language = "en"
+reply_en = "Any time."
+reply_ro = "Cu placere."
+
+[[case]]
+id = "lang.en.mixed_proper_noun"
+utterance = "Send that to Alexandru at the Cluj office."
+asr_language = "en"
+asr_confidence = 0.91
+expect_language = "en"
+terms = ["Alexandru", "Cluj"]
+reply_en = "Sent to Alexandru at the Cluj office."
+reply_ro = "Trimis lui Alexandru la biroul din Cluj."

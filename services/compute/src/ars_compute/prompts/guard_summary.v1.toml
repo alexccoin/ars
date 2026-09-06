@@ -1,0 +1,143 @@
+# One-sentence descriptions of a proposed action, for `GuardQuery.summary`.
+#
+# The protocol says this sentence is read aloud when the verdict is ASK, so it must be
+# true and specific — and it must be composed here, from the tool name and arguments,
+# never taken from the model's own words. In a tainted turn the model's phrasing is
+# attacker-influenced, and "summarise this page" is a very different consent prompt from
+# "email your last three invoices to an address on that page".
+
+version = "v1"
+
+# {tool} = tool name, {resource} = the concrete thing being touched (may be empty)
+[default.en]
+with_resource = "use {tool} on {resource}"
+without_resource = "use {tool}"
+[default.ro]
+with_resource = "folosesc {tool} pe {resource}"
+without_resource = "folosesc {tool}"
+
+[capability."web.search".en]
+with_resource = "search the web for {resource}"
+without_resource = "search the web"
+[capability."web.search".ro]
+with_resource = "caut pe web {resource}"
+without_resource = "caut pe web"
+
+[capability."web.fetch".en]
+with_resource = "open the page at {resource}"
+without_resource = "open a web page"
+[capability."web.fetch".ro]
+with_resource = "deschid pagina {resource}"
+without_resource = "deschid o pagină web"
+
+[capability."email.read".en]
+with_resource = "read your email matching {resource}"
+without_resource = "read your email"
+[capability."email.read".ro]
+with_resource = "citesc din mailul tău ce se potrivește cu {resource}"
+without_resource = "citesc din mailul tău"
+
+[capability."email.search".en]
+with_resource = "search your mailbox for {resource}"
+without_resource = "search your mailbox"
+[capability."email.search".ro]
+with_resource = "caut în mailul tău {resource}"
+without_resource = "caut în mailul tău"
+
+[capability."email.send".en]
+with_resource = "send an email to {resource}"
+without_resource = "send an email on your behalf"
+[capability."email.send".ro]
+with_resource = "trimit un e-mail către {resource}"
+without_resource = "trimit un e-mail în numele tău"
+
+[capability."files.read".en]
+with_resource = "read the file {resource}"
+without_resource = "read your files"
+[capability."files.read".ro]
+with_resource = "citesc fișierul {resource}"
+without_resource = "citesc din fișierele tale"
+
+[capability."files.write".en]
+with_resource = "write to {resource}"
+without_resource = "write a file"
+[capability."files.write".ro]
+with_resource = "scriu în {resource}"
+without_resource = "scriu un fișier"
+
+[capability."calendar.read".en]
+with_resource = "look at your calendar around {resource}"
+without_resource = "look at your calendar"
+[capability."calendar.read".ro]
+with_resource = "mă uit în calendarul tău în jurul {resource}"
+without_resource = "mă uit în calendarul tău"
+
+[capability."calendar.write".en]
+with_resource = "put {resource} in your calendar"
+without_resource = "add something to your calendar"
+[capability."calendar.write".ro]
+with_resource = "pun {resource} în calendarul tău"
+without_resource = "adaug ceva în calendarul tău"
+
+[capability."shell.exec".en]
+with_resource = "run the command {resource} on this machine"
+without_resource = "run a command on this machine"
+[capability."shell.exec".ro]
+with_resource = "rulez comanda {resource} pe calculatorul ăsta"
+without_resource = "rulez o comandă pe calculatorul ăsta"
+
+[capability."github.read_private".en]
+with_resource = "read your private repository {resource}"
+without_resource = "read your private repositories"
+[capability."github.read_private".ro]
+with_resource = "citesc repository-ul tău privat {resource}"
+without_resource = "citesc din repository-urile tale private"
+
+[capability."memory.write".en]
+with_resource = "remember {resource}"
+without_resource = "save something to memory"
+[capability."memory.write".ro]
+with_resource = "țin minte {resource}"
+without_resource = "salvez ceva în memorie"
+
+[capability."memory.read".en]
+with_resource = "look up what I remember about {resource}"
+without_resource = "look through what I remember about you"
+[capability."memory.read".ro]
+with_resource = "caut în ce îmi amintesc despre {resource}"
+without_resource = "caut prin ce îmi amintesc despre tine"
+
+[capability."contacts.read".en]
+with_resource = "look up {resource} in your contacts"
+without_resource = "look through your contacts"
+[capability."contacts.read".ro]
+with_resource = "caut {resource} în contactele tale"
+without_resource = "mă uit prin contactele tale"
+
+[capability."app.control".en]
+with_resource = "control {resource} on this machine"
+without_resource = "control an app on this machine"
+[capability."app.control".ro]
+with_resource = "controlez {resource} pe calculatorul ăsta"
+without_resource = "controlez o aplicație pe calculatorul ăsta"
+
+[capability."github.write".en]
+with_resource = "push a change to {resource}"
+without_resource = "push a change to GitHub in your name"
+[capability."github.write".ro]
+with_resource = "trimit o modificare în {resource}"
+without_resource = "trimit o modificare pe GitHub în numele tău"
+
+[capability."network.egress".en]
+with_resource = "send data to {resource}"
+without_resource = "send data out over the network"
+[capability."network.egress".ro]
+with_resource = "trimit date către {resource}"
+without_resource = "trimit date în afara calculatorului"
+
+[capability."github.read_public".en]
+with_resource = "read the public repository {resource}"
+without_resource = "read a public repository"
+[capability."github.read_public".ro]
+with_resource = "citesc repository-ul public {resource}"
+without_resource = "citesc un repository public"

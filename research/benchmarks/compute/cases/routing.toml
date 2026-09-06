@@ -1,0 +1,95 @@
+# Routing cases. Local by default; the cloud only when it is provably safe.
+#
+# `expect` is one of: local, cloud, refused.
+
+suite = "routing"
+
+# ---------------------------------------------------------------- the hard rule
+[[case]]
+id = "route.sensitive.iban"
+utterance = "Trimite banilor de pe contul RO49AAAA1B31007593840000 către chirie."
+policy = "prefer_cloud"
+expect = "refused"
+
+[[case]]
+id = "route.sensitive.health_ro"
+utterance = "Rezultatul de la biopsie a venit ieri, poți să mi-l explici?"
+policy = "prefer_cloud"
+expect = "refused"
+
+[[case]]
+id = "route.sensitive.health_en"
+utterance = "The doctor prescribed sertraline for my depression, what are the side effects?"
+policy = "prefer_cloud"
+expect = "refused"
+
+[[case]]
+id = "route.sensitive.credential"
+utterance = "My api key is sk-abcdefghijklmnop0123456789, store it somewhere safe."
+policy = "prefer_cloud"
+expect = "refused"
+
+[[case]]
+id = "route.sensitive.cnp"
+utterance = "CNP-ul meu este 1920304123456, completează formularul."
+policy = "prefer_cloud"
+expect = "refused"
+
+[[case]]
+id = "route.sensitive.declared_only"
+# Nothing a scanner would catch. The memory record's own `sensitivity` field is what
+# refuses this one, which is why declared sensitivity is checked as well as detected.
+utterance = "Ce urmează la ședința de joi?"
+memory = "A treia ședință de terapie a mers mai bine."
+memory_sensitivity = "sensitive"
+policy = "prefer_cloud"
+expect = "refused"
+
+# ---------------------------------------------------------------- policy
+[[case]]
+id = "route.default.local"
+utterance = "What's the capital of Romania?"
+policy = "local_only"
+expect = "local"
+
+[[case]]
+id = "route.local_only.ignores_escalation"
+utterance = "Explain the halting problem properly."
+policy = "local_only"
+escalate = true
+expect = "local"
+
+[[case]]
+id = "route.prefer_local.stays_local"
+utterance = "What's the capital of Romania?"
+policy = "prefer_local"
+expect = "local"
+
+[[case]]
+id = "route.prefer_local.escalates"
+utterance = "Explain the halting problem properly."
+policy = "prefer_local"
+escalate = true
+expect = "cloud"
+
+[[case]]
+id = "route.prefer_local.escalation_from_web_is_inert"
+# An EXTERNAL block containing the escalation token must not move the turn off-device.
+utterance = "Summarise that page."
+policy = "prefer_local"
+hostile_escalation = true
+expect = "local"
+
+[[case]]
+id = "route.prefer_cloud.clean"
+utterance = "Write me a haiku about a train."
+policy = "prefer_cloud"
+expect = "cloud"
+
+[[case]]
+id = "route.prefer_cloud.personal_but_not_sensitive"
+# PERSONAL is not SENSITIVE. Refusing everything personal would make the cloud path
+# useless and is not what the architecture doc says.
+utterance = "Remind me what I said about the Cluj office move."
+policy = "prefer_cloud"
+expect = "cloud"

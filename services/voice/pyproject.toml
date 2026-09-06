@@ -1,0 +1,43 @@
+[project]
+name = "ars-voice"
+version = "0.1.0"
+description = "A.R.S voice pipeline — wakeword, VAD/endpointing, ASR, TTS (EN + RO)"
+requires-python = ">=3.11"
+dependencies = [
+    "ars-protocol",
+    "ars-core",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "numpy>=2.0",
+]
+
+# Every optional dependency below is a *backend* dependency. The pipeline boots, runs and
+# is testable end to end with none of them installed: the mock/null engines are complete
+# implementations, not stubs. Nothing here is imported at module scope.
+[project.optional-dependencies]
+wakeword = ["openwakeword>=0.6"]
+asr = ["faster-whisper>=1.1"]
+vad = ["silero-vad>=5.1", "onnxruntime>=1.19"]
+tts = ["piper-tts>=1.2"]
+io = ["sounddevice>=0.5"]
+all = [
+    "openwakeword>=0.6",
+    "faster-whisper>=1.1",
+    "silero-vad>=5.1",
+    "onnxruntime>=1.19",
+    "piper-tts>=1.2",
+    "sounddevice>=0.5",
+]
+
+[project.scripts]
+ars-voice-latency = "ars_voice.eval.report:main"
+ars-voice-fixtures = "ars_voice.fixtures:main"
+ars-voice-endpoint-eval = "ars_voice.eval.endpointing:main"
+ars-voice-wakeword-eval = "ars_voice.eval.wakeword:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ars_voice"]

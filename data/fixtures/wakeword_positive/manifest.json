@@ -1,0 +1,337 @@
+{
+  "kind": "wakeword_positive",
+  "synthetic": true,
+  "generator": "ars_voice.fixtures",
+  "fixtures": [
+    {
+      "name": "positive_00",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -60.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_00.wav",
+      "speech_end_ms": 2180,
+      "total_ms": 3380
+    },
+    {
+      "name": "positive_01",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -56.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_01.wav",
+      "speech_end_ms": 2280,
+      "total_ms": 3480
+    },
+    {
+      "name": "positive_02",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 500,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -52.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_02.wav",
+      "speech_end_ms": 2380,
+      "total_ms": 3580
+    },
+    {
+      "name": "positive_03",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -60.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_03.wav",
+      "speech_end_ms": 2480,
+      "total_ms": 3680
+    },
+    {
+      "name": "positive_04",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 700,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -56.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_04.wav",
+      "speech_end_ms": 2580,
+      "total_ms": 3780
+    },
+    {
+      "name": "positive_05",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -52.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_05.wav",
+      "speech_end_ms": 2180,
+      "total_ms": 3380
+    },
+    {
+      "name": "positive_06",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 400,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -60.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_06.wav",
+      "speech_end_ms": 2280,
+      "total_ms": 3480
+    },
+    {
+      "name": "positive_07",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 500,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -56.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_07.wav",
+      "speech_end_ms": 2380,
+      "total_ms": 3580
+    },
+    {
+      "name": "positive_08",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -52.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_08.wav",
+      "speech_end_ms": 2480,
+      "total_ms": 3680
+    },
+    {
+      "name": "positive_09",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 700,
+          "text": ""
+        },
+        {
+          "kind": "keyword",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "turn the lights off"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 1200,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -60.0,
+      "speech_dbfs": -22.0,
+      "description": "Synthetic positive: keyword marker immediately followed by speech.",
+      "synthetic": true,
+      "file": "positive_09.wav",
+      "speech_end_ms": 2580,
+      "total_ms": 3780
+    }
+  ]
+}

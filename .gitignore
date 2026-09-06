@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Models & data — never commit weights or user data
+models/**/*.bin
+models/**/*.onnx
+models/**/*.gguf
+models/**/*.pt
+models/**/*.safetensors
+models/**/weights/
+data/datasets/**/raw/
+*.wav
+*.mp3
+*.flac
+!data/fixtures/**/*.wav
+
+# Runtime state — contains user data
+var/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+audit.jsonl
+vault.keys/
+*.fernet
+
+# Secrets — see security/policies/secrets.md
+.env
+.env.*
+!.env.example
+security/keys/*
+!security/keys/README.md
+!security/keys/*.md
+*.pem
+*.key
+credentials.json
+token.json
+
+# OS / editor
+.DS_Store
+.idea/
+*.swp

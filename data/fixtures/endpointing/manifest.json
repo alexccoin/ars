@@ -1,0 +1,413 @@
+{
+  "kind": "endpointing",
+  "synthetic": true,
+  "generator": "ars_voice.fixtures",
+  "fixtures": [
+    {
+      "name": "en_short_command",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1100,
+          "text": "turn off the kitchen light"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Plain command, clean stop. Pure latency case.",
+      "synthetic": true,
+      "file": "en_short_command.wav",
+      "speech_end_ms": 1400,
+      "total_ms": 3400
+    },
+    {
+      "name": "en_mid_sentence_pause",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 900,
+          "text": "send an email to Andrei"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 350,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1000,
+          "text": "about tomorrow's invoice"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "350 ms breath in the middle. Endpointing here truncates the user.",
+      "synthetic": true,
+      "file": "en_mid_sentence_pause.wav",
+      "speech_end_ms": 2550,
+      "total_ms": 4550
+    },
+    {
+      "name": "en_trailing_hesitation",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1000,
+          "text": "remind me to call the plumber and"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 620,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 800,
+          "text": "also book the car service"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Trails off on 'and', thinks for 620 ms, continues. The hard case.",
+      "synthetic": true,
+      "file": "en_trailing_hesitation.wav",
+      "speech_end_ms": 2720,
+      "total_ms": 4720
+    },
+    {
+      "name": "en_long_thought",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1800,
+          "text": "i want you to look at the calendar for next week"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 500,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1400,
+          "text": "and tell me which mornings are free"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Two long clauses with a 500 ms gap.",
+      "synthetic": true,
+      "file": "en_long_thought.wav",
+      "speech_end_ms": 4000,
+      "total_ms": 6000
+    },
+    {
+      "name": "en_two_word",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 520,
+          "text": "stop that"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Very short utterance. Must still endpoint, must not be swallowed.",
+      "synthetic": true,
+      "file": "en_two_word.wav",
+      "speech_end_ms": 820,
+      "total_ms": 2820
+    },
+    {
+      "name": "en_cough_then_command",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "transient",
+          "duration_ms": 120,
+          "text": ""
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 700,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1100,
+          "text": "play something quiet"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Transient before the utterance. Minimum-utterance guard case.",
+      "synthetic": true,
+      "file": "en_cough_then_command.wav",
+      "speech_end_ms": 2220,
+      "total_ms": 4220
+    },
+    {
+      "name": "en_noisy_kitchen",
+      "language": "en",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1200,
+          "text": "set a timer for ten minutes"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -45.0,
+      "speech_dbfs": -22.0,
+      "description": "Noise floor 17 dB higher. Fixed-threshold VAD fails this one.",
+      "synthetic": true,
+      "file": "en_noisy_kitchen.wav",
+      "speech_end_ms": 1800,
+      "total_ms": 3800
+    },
+    {
+      "name": "ro_short_command",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1100,
+          "text": "stinge lumina din bucătărie"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Comandă scurtă, oprire clară.",
+      "synthetic": true,
+      "file": "ro_short_command.wav",
+      "speech_end_ms": 1400,
+      "total_ms": 3400
+    },
+    {
+      "name": "ro_mid_sentence_pause",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 950,
+          "text": "trimite un email lui Andrei"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 350,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1050,
+          "text": "despre factura de mâine"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Pauză de respirație de 350 ms în mijloc.",
+      "synthetic": true,
+      "file": "ro_mid_sentence_pause.wav",
+      "speech_end_ms": 2650,
+      "total_ms": 4650
+    },
+    {
+      "name": "ro_trailing_hesitation",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1000,
+          "text": "adaugă pâine pe listă și"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 600,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 850,
+          "text": "niște lapte"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Se oprește pe 'și', se gândește 600 ms, continuă.",
+      "synthetic": true,
+      "file": "ro_trailing_hesitation.wav",
+      "speech_end_ms": 2750,
+      "total_ms": 4750
+    },
+    {
+      "name": "ro_long_thought",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1700,
+          "text": "vreau să te uiți în calendar săptămâna viitoare"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 480,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 1300,
+          "text": "și să îmi spui ce dimineți sunt libere"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Două propoziții lungi cu pauză de 480 ms.",
+      "synthetic": true,
+      "file": "ro_long_thought.wav",
+      "speech_end_ms": 3780,
+      "total_ms": 5780
+    },
+    {
+      "name": "ro_two_word",
+      "language": "ro",
+      "segments": [
+        {
+          "kind": "silence",
+          "duration_ms": 300,
+          "text": ""
+        },
+        {
+          "kind": "speech",
+          "duration_ms": 540,
+          "text": "oprește tot"
+        },
+        {
+          "kind": "silence",
+          "duration_ms": 2000,
+          "text": ""
+        }
+      ],
+      "noise_floor_dbfs": -62.0,
+      "speech_dbfs": -22.0,
+      "description": "Enunț foarte scurt.",
+      "synthetic": true,
+      "file": "ro_two_word.wav",
+      "speech_end_ms": 840,
+      "total_ms": 2840
+    }
+  ]
+}

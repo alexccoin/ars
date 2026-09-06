@@ -1,0 +1,32 @@
+[project]
+name = "ars-memory"
+version = "0.1.0"
+description = "A.R.S semantic memory + learned behaviour — fully local, SQLite-backed"
+requires-python = ">=3.11"
+dependencies = [
+    "ars-protocol",
+    "ars-core",
+    "ars-telemetry",
+    "pydantic>=2.9",
+    "aiosqlite>=0.20",
+    "numpy>=1.26",
+    "sqlite-vec>=0.1.9",
+]
+
+[project.optional-dependencies]
+# The real multilingual embedding backend. Kept optional and imported lazily (only
+# inside SentenceTransformerEmbeddingBackend) per the "no vendor SDK outside a backend
+# implementation" rule — services/memory itself never imports sentence_transformers or
+# torch at module scope, so a laptop without this extra installed still runs the whole
+# store against the deterministic hash backend.
+embeddings = ["sentence-transformers>=3.0"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ars_memory"]

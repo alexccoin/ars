@@ -1,0 +1,25 @@
+{
+  "schema_version": "v1",
+  "note": "ToolParam.type is a free-form string in the protocol. This file is the ONLY place that decides how it becomes a JSON Schema fragment. Anything not listed here is rendered as {\"type\": \"string\"} and reported by ars_compute.toolschema.unmapped_types() so an unmapped type is visible, not silently coerced.",
+  "types": {
+    "string": {"type": "string"},
+    "str": {"type": "string"},
+    "text": {"type": "string"},
+    "int": {"type": "integer"},
+    "integer": {"type": "integer"},
+    "number": {"type": "number"},
+    "float": {"type": "number"},
+    "bool": {"type": "boolean"},
+    "boolean": {"type": "boolean"},
+    "url": {"type": "string", "format": "uri"},
+    "uri": {"type": "string", "format": "uri"},
+    "email": {"type": "string", "format": "email"},
+    "date": {"type": "string", "format": "date"},
+    "datetime": {"type": "string", "format": "date-time"},
+    "path": {"type": "string"},
+    "object": {"type": "object"},
+    "array": {"type": "array", "items": {"type": "string"}},
+    "string[]": {"type": "array", "items": {"type": "string"}}
+  },
+  "fallback": {"type": "string"}
+}
