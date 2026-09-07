@@ -22,6 +22,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+from ars_protocol import SUPPORTED_LANGUAGES
+
 from . import paths
 
 log = logging.getLogger("ars.desktop.server")
@@ -71,7 +73,11 @@ def configure_environment() -> None:
     os.environ.setdefault("ARS_ENV", "desktop")
     os.environ.setdefault("ARS_DATA_DIR", str(data_dir))
     os.environ.setdefault("ARS_GUARD_AUDIT_LOG", str(data_dir / "audit.jsonl"))
-    os.environ.setdefault("ARS_LANGUAGES", "en,ro")
+    # From the protocol, never a copy of it. This was the fourth hard-coded "en,ro" in
+    # the tree, and the one that survived the other three being fixed — so the desktop
+    # app, which is how A.R.S is actually used, was the only place still shipping without
+    # German. It showed up as "Languages: en, ro" in the status panel of a running build.
+    os.environ.setdefault("ARS_LANGUAGES", ",".join(l.value for l in SUPPORTED_LANGUAGES))
     os.environ.setdefault("ARS_MODELS_DIR", str(paths.resolve_models_dir()))
 
     _load_env_overrides()
