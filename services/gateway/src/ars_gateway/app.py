@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import os
@@ -25,10 +26,14 @@ from ars_compute.backends.ollama import OllamaBackend
 from ars_compute.translation import LlmTranslationEngine
 from ars_compute.turn import TurnOrchestrator
 from ars_core import ArsConfig
+from ars_medical import MedicalConfig, SqliteMedicalStore
 from ars_memory.config import MemoryConfig
 from ars_memory.store import SqliteMemoryStore
 from ars_protocol import (
     Capability,
+    RangeFinding,
+    VitalKind,
+    VitalReading,
     MemoryKind, CapabilityGrant, ConfirmPolicy, Device, GrantSource, Language, Session,
     Transcript,
 )
@@ -68,6 +73,7 @@ class Ars:
         self.library: Any = None
         self.skills: Any = None
         self.translator: Any = None
+        self.vitals: Any = None
         self.voice: Any = None
         """Built on the first press of the mic button, never at startup: the voice models
         are ~1.6 GB and a user who only types should not wait for them."""
@@ -84,6 +90,12 @@ class Ars:
 
         self.memory = await SqliteMemoryStore.open(
             MemoryConfig(db_path_override=data_dir / "memory.db")
+        )
+        # Health readings live in their own database, not in memory.db. They are
+        # SENSITIVE, they have a different retention story, and "delete my health data"
+        # has to be a thing someone can do without touching everything else A.R.S knows.
+        self.vitals = await SqliteMedicalStore.open(
+            MedicalConfig(db_path_override=data_dir / "medical.db")
         )
         self.grants = SqliteGrantStore(data_dir / "grants")
         await self.grants.__aenter__()
@@ -186,6 +198,9 @@ class Ars:
         return self.voice
 
     async def stop(self) -> None:
+        with contextlib.suppress(Exception):
+            if self.vitals is not None:
+                await self.vitals.close()
         if self._warming is not None and not self._warming.done():
             self._warming.cancel()
         if self.voice is not None:
@@ -495,6 +510,81 @@ async def status() -> dict:
             "documents": ars.brain.config.document_threshold,
         },
     }
+
+
+# --------------------------------------------------------------------------- health
+
+@app.post("/api/health/readings")
+async def record_reading(body: dict) -> dict:
+    """Record one measurement.
+
+    Implausible values are refused rather than stored: a cuff that slipped reports 20/10,
+    and one of those silently corrupts every average computed afterwards. Alarming but
+    possible values are stored exactly as measured — filtering by what is healthy would
+    delete the readings that matter most.
+    """
+    try:
+        kind = VitalKind(body["kind"])
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(400, f"kind must be one of: {', '.join(k.value for k in VitalKind)}") from exc
+    try:
+        value = float(body["value"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(400, "value must be a number") from exc
+
+    reading = VitalReading(kind=kind, value=value, note=body.get("note") or None)
+    if body.get("measured_at_ms"):
+        reading = reading.model_copy(update={"measured_at_ms": int(body["measured_at_ms"])})
+    try:
+        stored = await ars.vitals.record(reading)
+    except Exception as exc:
+        raise HTTPException(422, str(exc)) from exc
+    findings = await ars.vitals.findings([stored])
+    return {"reading": json.loads(stored.model_dump_json()),
+            "outside_range": [json.loads(f.model_dump_json()) for f in findings]}
+
+
+@app.get("/api/health/readings")
+async def read_readings(kind: str | None = None, days: int = 30) -> dict:
+    """Your readings, and which of them sit outside a cited range.
+
+    `outside_range` is a comparison against a named source, never a judgement: the
+    protocol has no type for a diagnosis and this endpoint cannot invent one.
+    """
+    since = int(time.time() * 1000) - days * 86_400_000
+    if kind:
+        try:
+            kinds = [VitalKind(kind)]
+        except ValueError as exc:
+            raise HTTPException(400, f"unknown kind {kind!r}") from exc
+    else:
+        kinds = [r.kind for r in await ars.vitals.latest_all()]
+
+    out: dict[str, Any] = {"days": days, "series": {}}
+    everything: list[VitalReading] = []
+    for k in kinds:
+        readings = await ars.vitals.series(k, since_ms=since)
+        if not readings:
+            continue
+        everything.extend(readings)
+        aggregate = await ars.vitals.aggregate(k, since_ms=since)
+        out["series"][k.value] = {
+            "unit": k.unit,
+            "readings": [json.loads(r.model_dump_json()) for r in readings],
+            # `Aggregate` is a slotted dataclass from services/medical, not a pydantic
+            # model — it has no __dict__ and no model_dump_json. asdict() handles both
+            # rather than guessing at which shape a service happens to use today.
+            "aggregate": dataclasses.asdict(aggregate),
+        }
+    findings: tuple[RangeFinding, ...] = await ars.vitals.findings(everything)
+    out["outside_range"] = [json.loads(f.model_dump_json()) for f in findings]
+    return out
+
+
+@app.delete("/api/health/readings/{reading_id}")
+async def forget_reading(reading_id: str) -> dict:
+    """Really delete it. Non-negotiable #7 applies here with more force than anywhere."""
+    return {"id": reading_id, "removed": await ars.vitals.forget(record_id=reading_id)}
 
 
 # -------------------------------------------------------------------------- pairing

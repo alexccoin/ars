@@ -15,6 +15,7 @@ ars-core = { workspace = true }
 ars-telemetry = { workspace = true }
 ars-compute = { workspace = true }
 ars-memory = { workspace = true }
+ars-medical = { workspace = true }
 ars-auth = { workspace = true }
 ars-skills-runtime = { workspace = true }
 ars-voice = { workspace = true }

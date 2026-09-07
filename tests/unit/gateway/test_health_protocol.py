@@ -80,3 +80,28 @@ def test_writing_a_reading_is_graded_above_sending_an_email() -> None:
     read once and discarded, it joins a series, moves an average, and is still there
     months later when someone reads a trend from it. An email can be apologised for."""
     assert Capability.HEALTH_WRITE.risk.value == "critical"
+
+
+def test_the_users_note_and_the_devices_status_are_different_fields() -> None:
+    """A decoder wants to write "irregular pulse detected" somewhere, and `note` is the
+    obvious place. It is the wrong place twice over: it would be a user-facing string
+    existing in one language, which rule 5 forbids, and it would be indistinguishable from
+    something the user typed about their own reading."""
+    reading = VitalReading(
+        kind=VitalKind.HEART_RATE, value=88,
+        note="after coffee", status=("irregular_pulse", "body_movement"),
+    )
+
+    assert reading.note == "after coffee"
+    assert reading.status == ("irregular_pulse", "body_movement")
+    assert "irregular" not in (reading.note or "")
+
+
+def test_the_status_flags_are_identifiers_not_prose() -> None:
+    """They are rendered into a sentence at presentation, in whichever language the reader
+    is using. Storing the sentence instead would freeze one language into the record."""
+    reading = VitalReading(kind=VitalKind.HEART_RATE, value=88, status=("irregular_pulse",))
+
+    for flag in reading.status:
+        assert flag == flag.lower()
+        assert " " not in flag

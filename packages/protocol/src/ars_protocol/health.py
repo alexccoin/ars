@@ -110,7 +110,19 @@ class ReadingSource(Model):
     device_kind: DeviceKind = DeviceKind.MANUAL
     device_name: str | None = None
     device_id: str | None = None
-    """Stable per physical device, so "my old cuff read 10 mmHg high" is expressible."""
+    """An identifier for the device, scoped to the machine that recorded the reading.
+
+    This said "stable per physical device" until someone checked. On CoreBluetooth the
+    only identifier available without pairing is a peripheral UUID that macOS generates
+    PER MAC, so the same cuff read from a laptop, a phone and a tablet produces three
+    different ids — and "my old cuff read 10 mmHg high" stops being expressible across
+    devices. Worse, that is not retrofittable: once readings are written under per-machine
+    ids there is nothing left to join them on.
+
+    Left as-is deliberately rather than invented: a genuinely stable id needs the Device
+    Information Service's serial number, which requires connecting and which not every
+    device exposes. Until then this is a hint, and `device_name` is what a person should
+    be shown."""
 
 
 class VitalReading(Model):
@@ -126,7 +138,21 @@ class VitalReading(Model):
     value: float
     measured_at_ms: int = Field(default_factory=now_ms)
     source: ReadingSource = Field(default_factory=ReadingSource)
+
     note: str | None = None
+    """The user's own words about this reading — "after coffee", "before the run".
+
+    Only ever the user's. A device decoder must NOT write English status text here:
+    "irregular pulse detected" arriving from a cuff would be a user-facing string that
+    exists in one language, which rule 5 forbids, and it would be indistinguishable from
+    something the user typed. Device status belongs in `status`, which is structured and
+    rendered in the reader's language at presentation."""
+
+    status: tuple[str, ...] = ()
+    """Structured flags the device reported alongside the value, as stable identifiers —
+    "irregular_pulse", "cuff_too_loose", "body_movement". Never prose, never translated
+    at this layer; the interface turns these into sentences in whichever language it is
+    speaking."""
     sensitivity: Sensitivity = Sensitivity.SENSITIVE
     superseded_by: str | None = None
 

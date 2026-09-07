@@ -200,6 +200,7 @@ enough room to read what a machine knows about you.
 | `services/voice` | wakeword, VAD, ASR, TTS |
 | `services/compute` | reasoning, tool routing, context assembly, observation extraction — see [README](../../services/compute/README.md) |
 | `services/memory` | facts, embeddings, learned preferences, deletion |
+| `services/medical` | vital readings, reference ranges, findings — deletion; no diagnosis, ever (`packages/protocol/src/ars_protocol/health.py`) |
 | `services/auth` | grants, consent, OAuth token vault, audit log |
 | `services/skills-runtime` | sandboxed skill execution |
 | `services/gateway` | WebSocket front door |
