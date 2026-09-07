@@ -166,3 +166,43 @@ async def test_the_loop_never_claims_silence_when_no_audio_arrived() -> None:
     await asyncio.wait_for(loop._task, timeout=5)
 
     assert any(e.get("code") == "NoAudio" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_a_second_window_does_not_steal_the_first_ones_events() -> None:
+    """`_on_event` was a single callback, reassigned every time `listen` arrived. Opening
+    a second window — or simply reconnecting after a dropped socket — silently took the
+    event stream away from the first: the microphone worked, the turn ran, the answer was
+    spoken aloud, and the window that asked for it received nothing at all. Two separate
+    voice investigations were derailed by that, because from the outside it is
+    indistinguishable from voice being broken."""
+    from ars_gateway.voice import VoiceLoop
+
+    first: list[dict] = []
+    second: list[dict] = []
+    loop = VoiceLoop(handler=object(), session=object(), on_event=first.append)
+    loop.add_listener(second.append)
+
+    await loop._emit_dict({"type": "state", "state": "listening"})
+
+    assert first == second == [{"type": "state", "state": "listening"}]
+
+
+@pytest.mark.asyncio
+async def test_a_closed_socket_does_not_silence_the_others() -> None:
+    """One window closed used to raise here and end the voice session for every other
+    listener."""
+    from ars_gateway.voice import VoiceLoop
+
+    alive: list[dict] = []
+
+    def dead(_payload: dict) -> None:
+        raise RuntimeError("websocket is closed")
+
+    loop = VoiceLoop(handler=object(), session=object(), on_event=dead)
+    loop.add_listener(alive.append)
+
+    await loop._emit_dict({"type": "state", "state": "idle"})
+    await loop._emit_dict({"type": "state", "state": "listening"})
+
+    assert len(alive) == 2, "a dead socket took the live one down with it"

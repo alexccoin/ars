@@ -93,7 +93,15 @@ class VoiceLoop:
         willing to talk into it. That is how all of it went untested."""
         self._handler = handler
         self._session = session
-        self._on_event = on_event
+        self._listeners: list[Callable[[dict], object]] = [on_event]
+        """Every socket that asked to listen, not just the most recent one.
+
+        This was a single callback, reassigned each time `listen` arrived — so opening a
+        second window, or simply reconnecting after a dropped socket, silently stole the
+        event stream from the first. The microphone worked, the turn ran, the answer was
+        spoken aloud, and the window that asked for it received nothing. Two separate
+        voice investigations were derailed by exactly that, because from the outside it
+        is indistinguishable from voice being broken."""
         self._language = language
         self._pipeline = None
         self._wake: ManualWakewordEngine | None = None
@@ -265,10 +273,25 @@ class VoiceLoop:
             return
         await self._emit_dict(json.loads(event.model_dump_json()))
 
+    def add_listener(self, on_event: Callable[[dict], object]) -> None:
+        if on_event not in self._listeners:
+            self._listeners.append(on_event)
+
+    def remove_listener(self, on_event: Callable[[dict], object]) -> None:
+        with contextlib.suppress(ValueError):
+            self._listeners.remove(on_event)
+
     async def _emit_dict(self, payload: dict) -> None:
-        result = self._on_event(payload)
-        if asyncio.iscoroutine(result):
-            await result
+        # A dead socket must not take the others down with it: a closed connection raises
+        # here, and one closed window would otherwise end the voice session for everyone.
+        for listener in list(self._listeners):
+            try:
+                result = listener(payload)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:
+                log.debug("dropping a listener that could not be reached", exc_info=True)
+                self.remove_listener(listener)
 
     def press(self, *, hold: bool = False) -> None:
         """The mic button. Starts a turn, with the half second before the press.

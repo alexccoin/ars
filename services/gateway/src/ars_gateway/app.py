@@ -195,7 +195,7 @@ class Ars:
                 on_event=on_event,
             )
         else:
-            self.voice._on_event = on_event  # the socket that asked is the one that hears
+            self.voice.add_listener(on_event)
         await self.voice.start()
         self.voice.press()
         return self.voice
