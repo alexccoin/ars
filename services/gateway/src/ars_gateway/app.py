@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import secrets
 import time
 from collections.abc import AsyncIterator
@@ -31,7 +32,7 @@ from ars_protocol import (
     MemoryKind, CapabilityGrant, ConfirmPolicy, Device, GrantSource, Language, Session,
     Transcript,
 )
-from ars_skills import GitHubSkill, InProcessSkillRuntime, WebSkill
+from ars_skills import GitHubSkill, InProcessSkillRuntime, MedicalSkill, WebSkill
 from fastapi import (
     FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect,
 )
@@ -92,7 +93,15 @@ class Ars:
             config=self.config.guard,
         )
         self.skills = InProcessSkillRuntime(guard_evaluate=self.guard.evaluate)
-        for skill in (WebSkill(), GitHubSkill()):
+        skills = [WebSkill(), GitHubSkill()]
+        # The clinical reference is registered only when one is configured. A skill whose
+        # every call fails with "no reference configured" is worse than an absent one: the
+        # model sees the tool, offers it, calls it, and reports an error the user cannot
+        # act on.
+        if os.environ.get("ARS_MEDICAL_URL", "").strip():
+            skills.append(MedicalSkill())
+            log.info("clinical reference configured; medical tools available")
+        for skill in skills:
             self.skills.register(skill)
 
         self.backend = OllamaBackend(

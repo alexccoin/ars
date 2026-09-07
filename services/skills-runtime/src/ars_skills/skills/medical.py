@@ -124,10 +124,11 @@ class MedicalSkill(Skill):
     async def _lookup(self, query: str, ctx: SkillContext, *, table: str, fields: str,
                       render) -> list[tuple[str, Provenance]]:
         base = _base_url(required=True)
-        key = await ctx.secret("aresmed")
+        key = await ctx.secret("aresmed") or os.environ.get("ARS_MEDICAL_KEY", "").strip()
         if not key:
             raise SkillError(
-                "no credential for the medical reference — add it to the vault as 'aresmed'"
+                "no credential for the medical reference — put it in the vault as "
+                "'aresmed', or set ARS_MEDICAL_KEY"
             )
         ctx.check_cancelled()
         # Full-text-ish search over the title and body. Postgrest's `or` with `ilike`
