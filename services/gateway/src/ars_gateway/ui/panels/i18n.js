@@ -60,8 +60,8 @@ const STRINGS = {
   'console.escalate_usage': { en: 'Nothing to escalate yet — ask a question first.', ro: 'Nu există nimic de escaladat — pune mai întâi o întrebare.', de: 'Noch nichts zu eskalieren — stell zuerst eine Frage.' },
   'console.no_network': { en: 'Not connected — your message was not sent.', ro: 'Neconectat — mesajul tău nu a fost trimis.', de: 'Nicht verbunden — deine Nachricht wurde nicht gesendet.' },
   'console.help': {
-    en: 'Commands: /docs /grants /audit /status /clear /lang ro|en /escalate',
-    ro: 'Comenzi: /docs /grants /audit /status /clear /lang ro|en /escalate', de: 'Befehle: /docs /grants /audit /status /clear /lang ro|en|de /escalate' },
+    en: 'Commands: /brain /docs /grants /audit /status /clear /lang ro|en|de /escalate',
+    ro: 'Comenzi: /brain /docs /grants /audit /status /clear /lang ro|en|de /escalate', de: 'Befehle: /brain /docs /grants /audit /status /clear /lang ro|en|de /escalate' },
 
   // tiers
   'tier.recall': { en: 'recall', ro: 'reamintire', de: 'Erinnerung' },
@@ -144,6 +144,62 @@ const STRINGS = {
   // panel chrome
   'panel.collapse': { en: 'Collapse {title}', ro: 'Restrânge {title}', de: '{title} einklappen' },
   'panel.expand': { en: 'Expand {title}', ro: 'Extinde {title}', de: '{title} ausklappen' },
+
+  // panel deck — the side column is a selector now, not a stack
+  'deck.aria': { en: 'Panel selector', ro: 'Selector de panouri', de: 'Bereichsauswahl' },
+  'deck.tab.brain': { en: 'Brain', ro: 'Creier', de: 'Gehirn' },
+  'deck.tab.documents': { en: 'Docs', ro: 'Docs', de: 'Docs' },
+  'deck.tab.grants': { en: 'Access', ro: 'Acces', de: 'Zugriff' },
+  'deck.tab.audit': { en: 'Audit', ro: 'Audit', de: 'Audit' },
+  'deck.tab.status': { en: 'System', ro: 'Sistem', de: 'System' },
+
+  // brain network
+  'brain.title': { en: 'Brain network', ro: 'Rețeaua creierului', de: 'Gehirnnetz' },
+  'brain.empty': {
+    en: 'Nothing learned yet. Drop a document anywhere in the window and watch the network grow.',
+    ro: 'Nimic învățat încă. Trage un document oriunde în fereastră și privește cum crește rețeaua.',
+    de: 'Noch nichts gelernt. Zieh ein Dokument irgendwohin ins Fenster und sieh zu, wie das Netz wächst.' },
+  'brain.hint': {
+    en: 'Drag to move · scroll to zoom · click a node to read it',
+    ro: 'Trage pentru a muta · derulează pentru zoom · apasă un nod ca să-l citești',
+    de: 'Ziehen zum Bewegen · Scrollen zum Zoomen · Knoten anklicken zum Lesen' },
+  'brain.node.document': { en: 'document', ro: 'document', de: 'Dokument' },
+  'brain.node.passage': { en: 'passage', ro: 'fragment', de: 'Abschnitt' },
+  'brain.node.fact': { en: 'learned answer', ro: 'răspuns învățat', de: 'gelernte Antwort' },
+  'brain.count.documents': { en: 'documents', ro: 'documente', de: 'Dokumente' },
+  'brain.count.passages': { en: 'passages', ro: 'fragmente', de: 'Abschnitte' },
+  'brain.count.facts': { en: 'answers', ro: 'răspunsuri', de: 'Antworten' },
+  'brain.count.translations': { en: 'translations', ro: 'traduceri', de: 'Übersetzungen' },
+  'brain.new': { en: '+{n} learned', ro: '+{n} învățate', de: '+{n} gelernt' },
+  'brain.learned_one': { en: 'learned: {label}', ro: 'învățat: {label}', de: 'gelernt: {label}' },
+  'brain.forgot': { en: 'forgotten: {n}', ro: 'uitate: {n}', de: 'vergessen: {n}' },
+  'brain.fit': { en: 'Fit', ro: 'Încadrează', de: 'Einpassen' },
+  'brain.expand': { en: 'Expand', ro: 'Extinde', de: 'Vergrößern' },
+  'brain.close': { en: 'Close', ro: 'Închide', de: 'Schließen' },
+  'brain.unavailable': {
+    en: 'This browser has no canvas — listing what A.R.S knows instead.',
+    ro: 'Acest browser nu are canvas — se afișează o listă cu ceea ce știe A.R.S.',
+    de: 'Dieser Browser hat kein Canvas — stattdessen eine Liste dessen, was A.R.S weiß.' },
+  'brain.unreachable': {
+    en: 'Could not reach /api/knowledge — the network shown may be stale.',
+    ro: 'Nu s-a putut contacta /api/knowledge — rețeaua afișată poate fi învechită.',
+    de: '/api/knowledge war nicht erreichbar — das gezeigte Netz kann veraltet sein.' },
+  'brain.nothing_selected': {
+    en: 'Click a node to see what it is.',
+    ro: 'Apasă un nod ca să vezi ce este.',
+    de: 'Klick einen Knoten an, um zu sehen, was er ist.' },
+  'brain.in_document': { en: 'in {name}', ro: 'în {name}', de: 'in {name}' },
+  'brain.translated_from': { en: 'translated from {lang}', ro: 'tradus din {lang}', de: 'übersetzt aus dem {lang}' },
+  'brain.derived': { en: 'derived by A.R.S', ro: 'derivat de A.R.S', de: 'von A.R.S abgeleitet' },
+  'brain.original': { en: 'as you gave it', ro: 'așa cum l-ai dat', de: 'so wie du es gegeben hast' },
+  'brain.links': { en: 'Connections', ro: 'Conexiuni', de: 'Verbindungen' },
+  'brain.language': { en: 'Language', ro: 'Limbă', de: 'Sprache' },
+  'brain.isolate': { en: 'Isolate {name}', ro: 'Izolează {name}', de: '{name} isolieren' },
+  'brain.show_all': { en: 'Show everything', ro: 'Arată tot', de: 'Alles anzeigen' },
+  'brain.a11y': {
+    en: '{total} things known: {documents} documents, {passages} passages, {facts} learned answers.',
+    ro: '{total} lucruri cunoscute: {documents} documente, {passages} fragmente, {facts} răspunsuri învățate.',
+    de: '{total} bekannte Dinge: {documents} Dokumente, {passages} Abschnitte, {facts} gelernte Antworten.' },
 
   // errors
   'error.model_unavailable': { en: 'The model is unavailable right now.', ro: 'Modelul nu este disponibil momentan.', de: 'Das Modell ist gerade nicht verfügbar.' },

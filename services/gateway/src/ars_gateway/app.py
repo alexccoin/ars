@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import secrets
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -31,10 +32,16 @@ from ars_protocol import (
     Transcript,
 )
 from ars_skills import GitHubSkill, InProcessSkillRuntime, WebSkill
-from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .access import (
+    COOKIE, QUERY_PARAM, DeviceTokenMiddleware, is_loopback, lan_address,
+    load_or_create_token,
+)
 from .brain import Answer, Tier, TieredBrain
 from .documents import DocumentLibrary, UnsupportedDocument
 from .voice import LadderTurnHandler, VoiceLoop
@@ -174,6 +181,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="A.R.S", version="0.1.0", lifespan=lifespan)
 
+# Registered here, not inside `start`: middleware has to wrap the app before it serves its
+# first request, and a gateway that is briefly open while it boots is a gateway that is
+# open. The token is created on import for the same reason.
+_DATA_DIR = Path(ars.config.data_dir).expanduser()
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
+DEVICE_TOKEN = load_or_create_token(_DATA_DIR)
+app.add_middleware(DeviceTokenMiddleware, token=DEVICE_TOKEN)
+
 
 # --------------------------------------------------------------------------- the turn
 
@@ -286,6 +301,21 @@ def _tier_stats() -> dict:
 
 @app.websocket("/ws")
 async def websocket(ws: WebSocket) -> None:
+    # Starlette's HTTP middleware does not see WebSocket handshakes, so the check is
+    # repeated here rather than assumed. This socket is the one that can ask A.R.S to act,
+    # so it is the last place an unpaired device should be able to reach.
+    if not is_loopback(ws.client.host if ws.client else None):
+        presented = (
+            ws.query_params.get(QUERY_PARAM)
+            or ws.cookies.get(COOKIE)
+            or (ws.headers.get("authorization", "")[7:].strip()
+                if ws.headers.get("authorization", "").lower().startswith("bearer ") else None)
+        )
+        if presented is None or not secrets.compare_digest(presented, DEVICE_TOKEN):
+            log.warning("refused a websocket from %s",
+                        ws.client.host if ws.client else "unknown")
+            await ws.close(code=4401, reason="this device is not paired with A.R.S")
+            return
     await ws.accept()
     await ws.send_json({"type": "session_started", "session_id": ars.session.id,
                         "languages": [l.value for l in ars.config.languages],
@@ -435,6 +465,34 @@ async def status() -> dict:
             "recall_cosine": ars.brain.config.recall_cosine,
             "documents": ars.brain.config.document_threshold,
         },
+    }
+
+
+# -------------------------------------------------------------------------- pairing
+
+@app.get("/api/pairing")
+async def pairing(request: Request) -> dict:
+    """The link to open on another device. Loopback only.
+
+    Handing the token to anything that already has the token would be pointless; handing
+    it to anything that does not would defeat the middleware. So this answers on the
+    machine A.R.S runs on, and nowhere else.
+    """
+    if not is_loopback(request.client.host if request.client else None):
+        raise HTTPException(404)
+    host = lan_address()
+    port = request.url.port or 8787
+    reachable = ars.config.listen_host not in ("127.0.0.1", "localhost", "::1")
+    return {
+        "reachable_from_other_devices": reachable,
+        "url": f"http://{host}:{port}/?{QUERY_PARAM}={DEVICE_TOKEN}" if host else None,
+        "listen_host": ars.config.listen_host,
+        "hint": (
+            "Open this link on your phone or another computer on the same network."
+            if reachable else
+            "A.R.S is only listening on this machine. Set ARS_LISTEN_HOST=0.0.0.0 and "
+            "restart to let your other devices in."
+        ),
     }
 
 

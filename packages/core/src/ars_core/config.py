@@ -103,6 +103,14 @@ class ArsConfig(BaseSettings):
             return tuple(part.strip() for part in text.split(",") if part.strip())
         return v
 
+    listen_host: str = "127.0.0.1"
+    """Which interface the gateway binds to.
+
+    Loopback by default, and that default is the security model: A.R.S holds the user's
+    documents and standing grants to act on their real accounts, so it is not reachable
+    from a network until someone deliberately makes it so. Set to "0.0.0.0" to let other
+    devices in — every one of them then needs the device token."""
+
     translate_documents: bool = True
     """Index an uploaded document in every language A.R.S speaks, not only its own.
 

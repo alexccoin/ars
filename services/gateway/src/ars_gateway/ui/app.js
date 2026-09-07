@@ -13,6 +13,8 @@
 import { t, LANGS } from './panels/i18n.js';
 import { panel as fallbackPanel, gauge as fallbackGauge, pip as fallbackPip, ticker as fallbackTicker, tierIndicator as fallbackTierIndicator, ArsEntityFallback } from './panels/hud-fallback.js';
 import { createConsole } from './panels/console.js';
+import { createDeck } from './panels/deck.js';
+import { createBrainPanel } from './panels/brain.js';
 import { createDocumentsPanel } from './panels/documents.js';
 import { createGrantsPanel } from './panels/grants.js';
 import { createAuditPanel } from './panels/audit.js';
@@ -133,16 +135,50 @@ async function main() {
 
   // ------------------------------------------------------------------------------ panels
 
+  // The side column is a deck of instruments now, not one long stack: one view
+  // at a time, chosen from the tab strip. Each panel is constructed exactly as
+  // before and still owns everything inside itself — the only change is which
+  // element it mounts into.
   const panelsRoot = document.getElementById('panels-root');
-  const docsPanel = createDocumentsPanel({ root: panelsRoot, hud, getLang, baseUrl: '' });
-  const grantsPanel = createGrantsPanel({ root: panelsRoot, hud, getLang, baseUrl: '' });
-  const auditPanel = createAuditPanel({ root: panelsRoot, hud, getLang, baseUrl: '' });
-  const statusPanel = createStatusPanel({ root: panelsRoot, hud, getLang, baseUrl: '' });
+  const deck = createDeck({ root: panelsRoot, getLang });
 
-  const allPanels = [docsPanel, grantsPanel, auditPanel, statusPanel];
+  const brainPanel = createBrainPanel({
+    root: deck.view('brain', { labelKey: 'deck.tab.brain', titleKey: 'brain.title', icon: 'brain' }),
+    hud, getLang, baseUrl: '',
+  });
+  const docsPanel = createDocumentsPanel({
+    root: deck.view('documents', { labelKey: 'deck.tab.documents', titleKey: 'docs.title', icon: 'documents' }),
+    hud, getLang, baseUrl: '',
+  });
+  const grantsPanel = createGrantsPanel({
+    root: deck.view('grants', { labelKey: 'deck.tab.grants', titleKey: 'grants.title', icon: 'grants' }),
+    hud, getLang, baseUrl: '',
+  });
+  const auditPanel = createAuditPanel({
+    root: deck.view('audit', { labelKey: 'deck.tab.audit', titleKey: 'audit.title', icon: 'audit' }),
+    hud, getLang, baseUrl: '',
+  });
+  const statusPanel = createStatusPanel({
+    root: deck.view('status', { labelKey: 'deck.tab.status', titleKey: 'status.title', icon: 'status' }),
+    hud, getLang, baseUrl: '',
+  });
+
+  const allPanels = [brainPanel, docsPanel, grantsPanel, auditPanel, statusPanel];
+  deck.retranslate();
+  deck.restore();
+
+  // What A.R.S knows is worth seeing even from another tab, so the counts ride
+  // on the tabs themselves and ping when they change.
+  brainPanel.setOnCounts((count, summary) => {
+    deck.setBadge('brain', count);
+    deck.setBadge('documents', summary.documents || 0);
+  });
+
+  let auditCount = 0;
 
   function focusPanel(p) {
     const rootEl = p.panelRoot;
+    deck.selectByChild(rootEl);
     const body = rootEl.querySelector('.hud-panel__body');
     if (body && body.hidden) {
       const toggle = rootEl.querySelector('.hud-panel__toggle');
@@ -168,9 +204,16 @@ async function main() {
   let ws = null;
   let reconnectTimer = null;
 
+  // A paired device follows a link carrying ?t=<token>. The gateway answers that request
+  // with an HttpOnly cookie, which every later fetch sends automatically — but a
+  // WebSocket handshake opened before that cookie lands would be refused, so the token is
+  // carried explicitly on the socket URL for the first connection.
+  const PAIRING_TOKEN = new URLSearchParams(location.search).get('t');
+
   function wsUrl() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    return `${proto}://${location.host}/ws`;
+    const query = PAIRING_TOKEN ? `?t=${encodeURIComponent(PAIRING_TOKEN)}` : '';
+    return `${proto}://${location.host}/ws${query}`;
   }
 
   function sendMessage(msg) {
@@ -309,6 +352,8 @@ async function main() {
             explanation: msg.decision && msg.decision.explanation,
           });
         }
+        auditCount += 1;
+        deck.setBadge('audit', auditCount);
         auditPanel.pushRecord({
           id: msg.call && msg.call.id,
           at_ms: (msg.call && msg.call.requested_at_ms) || Date.now(),
@@ -349,6 +394,9 @@ async function main() {
       }
       case 'document_learned': {
         docsPanel.handleDocumentLearned(msg);
+        // Do not wait for the poll: the graph should visibly grow the moment
+        // A.R.S says it learned something.
+        brainPanel.refresh();
         break;
       }
       default:
@@ -442,6 +490,12 @@ async function main() {
     const [cmdRaw, ...rest] = raw.trim().split(/\s+/);
     const cmd = cmdRaw.toLowerCase();
     switch (cmd) {
+      case '/brain':
+      case '/network':
+        focusPanel(brainPanel);
+        brainPanel.refresh();
+        consoleUI.appendSystemLine(t('brain.title', getLang()), 'info');
+        break;
       case '/docs':
         focusPanel(docsPanel);
         consoleUI.appendSystemLine(t('docs.title', getLang()), 'info');
@@ -498,6 +552,7 @@ async function main() {
     connPip.setLabel(state.wsReady ? t('conn.online', lang) : t('conn.offline', lang));
     updateGpuGauge();
     consoleUI.retranslate();
+    deck.retranslate();
     for (const p of allPanels) p.retranslate();
   }
 
@@ -543,6 +598,7 @@ async function main() {
     } else {
       setBanner('network', null);
       docsPanel.setOffline(false);
+      brainPanel.refresh();
     }
   }
   window.addEventListener('online', updateOfflineBanner);

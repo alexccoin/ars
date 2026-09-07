@@ -108,7 +108,7 @@ class GatewayHandle:
             log.warning("gateway thread did not stop within %.1fs", timeout)
 
 
-def start_gateway(*, host: str = "127.0.0.1") -> GatewayHandle:
+def start_gateway(*, host: str | None = None) -> GatewayHandle:
     """Start the gateway on a free port and return immediately; call ``wait_healthy``
     to block until it can actually serve a request."""
     configure_environment()
@@ -131,9 +131,13 @@ def start_gateway(*, host: str = "127.0.0.1") -> GatewayHandle:
                 log.error("could not import ars_gateway.app: %s", box["import_error"])
                 return
 
+            # Loopback unless the user has deliberately opened it. The desktop shell's own
+            # window always reaches it over loopback either way, so opening it costs the
+            # owner nothing and is never done on their behalf.
+            bind = host or os.environ.get("ARS_LISTEN_HOST", "127.0.0.1")
             config = uvicorn.Config(
                 gateway_app,
-                host=host,
+                host=bind,
                 port=port,
                 log_level=os.environ.get("ARS_LOG_LEVEL", "info").lower(),
                 timeout_graceful_shutdown=5,
