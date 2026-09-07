@@ -115,6 +115,8 @@ class VoicePipeline:
         self._wake_task: asyncio.Task | None = None
         self._pending_wake: WakeEvent | None = None
         self._wake_push_mark: float = 0.0
+        self._wake_seq = 0
+        """Sequence numbers for the wakeword channel, which is fed only while IDLE."""
 
         self._asr_channel: FrameChannel | None = None
         self._asr_task: asyncio.Task | None = None
@@ -126,6 +128,8 @@ class VoicePipeline:
         self._expected_seq: int | None = None
         self._speech_active = True
         self._turn_began_with_wake = False
+        self._resuming = False
+        """A cancellation is in flight that will reopen the microphone, not idle."""
         self._spoken_text = ""
         self._asr_seq = 0
         self._warmed = False
@@ -232,7 +236,9 @@ class VoicePipeline:
         self._barge_in_speech_ms = 0.0
         self._speech_active = True
         self._turn_began_with_wake = False
+        self._resuming = False
         self._asr_seq = 0
+        self._wake_seq = 0
         self._spoken_text = ""
         self.endpointer.reset()
         self.vad.reset()
@@ -240,7 +246,55 @@ class VoicePipeline:
     async def interrupt(self, reason: str = "user_cancel") -> None:
         """Client-initiated interrupt (`ars_protocol.Interrupt`). Same path as barge-in."""
         self._interrupt_requested = True
-        await self._cancel_turn(reason)
+        await self._cancel_turn(reason, resume=False)
+
+    BUSY_STATES = (
+        AgentState.TRANSCRIBING,
+        AgentState.THINKING,
+        AgentState.ACTING,
+        AgentState.SPEAKING,
+        AgentState.WAITING_FOR_CONSENT,
+    )
+
+    async def request_turn(self, reason: str = "user_press") -> str:
+        """"Listen to me, now." The one entry point for a deliberate push-to-talk press.
+
+        Arming the wakeword engine is not enough on its own, and that gap cost a whole
+        evening of debugging. The engine is only fed frames while the pipeline is IDLE, so
+        an arm set in any other state sits there — not lost, *deferred* — until the current
+        turn ends, and then opens the microphone at a moment nobody asked for. Measured on
+        mock engines: three presses at 1.6 s, 3.1 s and 4.6 s during LISTENING and THINKING
+        produced zero wake events and zero state changes, and the arm finally fired at
+        5.06 s, 1.95 s after the last press and long after the user had stopped talking.
+        Through the gateway, with a 14B model on the other end of the turn, the deferral was
+        13 seconds. From the outside that is a dead button.
+
+        So the press is routed by state instead:
+
+        * IDLE/ERROR — arm the engine, which fires on the next inference window (<=80 ms)
+          and carries the pre-roll with it. Unchanged, and still the only way a turn begins.
+        * LISTENING — the microphone is already open and the words are already reaching ASR.
+          Do nothing, and in particular do *not* arm: that is precisely how the stale arm
+          was created.
+        * anything else — the user's own hand is on the button while A.R.S is thinking or
+          talking, which is not an echo and not ambiguous. Cancel the turn through the full
+          cancellation path (synthesiser, compute request, task, speaker queue) and go
+          straight back to listening with the audio already in hand.
+
+        Returns what actually happened, so the caller can log something true rather than
+        "armed" regardless.
+        """
+        if self.state in (AgentState.IDLE, AgentState.ERROR):
+            trigger = getattr(self.wakeword, "trigger", None)
+            if not callable(trigger):
+                log.error("press: %s cannot be triggered", type(self.wakeword).__name__)
+                return "unsupported"
+            trigger()
+            return "armed"
+        if self.state is AgentState.LISTENING:
+            return "already_listening"
+        await self._cancel_turn(reason, resume=True)
+        return "interrupted"
 
     def latency_report(self, *, voice_only: bool = False) -> str:
         return self.latency.format_report(voice_only=voice_only)
@@ -275,7 +329,19 @@ class VoicePipeline:
     async def _on_frame(self, frame: AudioFrame) -> None:
         self.counters.frames_in += 1
         if self._expected_seq is not None and frame.seq != self._expected_seq:
+            # This is the one place that sees every frame in every state, so it is the only
+            # place that can tell dropped audio from a stream we deliberately paused. Say
+            # how much was lost, in milliseconds, because "frame gap" on its own sends
+            # people looking for a scheduling bug when the microphone simply overran.
+            lost = frame.seq - self._expected_seq
             self.counters.frame_gaps += 1
+            self.counters.extra["frames_dropped"] = (
+                self.counters.extra.get("frames_dropped", 0) + max(lost, 0)
+            )
+            log.warning(
+                "microphone gap: %d frames (%.0f ms) never arrived (expected seq=%d, got %d)",
+                lost, lost * frame_duration_ms(frame), self._expected_seq, frame.seq,
+            )
         self._expected_seq = frame.seq + 1
         self._recent.push(frame)
 
@@ -313,7 +379,16 @@ class VoicePipeline:
     async def _feed_wakeword(self, frame: AudioFrame) -> None:
         assert self._wake_channel is not None
         self._wake_push_mark = LatencyRecorder.mark()
-        await self._wake_channel.push(frame)
+        # Renumbered, exactly as the ASR channel is. The wakeword is fed only while the
+        # pipeline is IDLE, so every turn leaves a hole in the raw sequence — and the
+        # engine's gap detector, which cannot know the pause was deliberate, reported it as
+        # dropped audio. A real 4.4 s turn produced "frame gap, expected seq=8 got 226":
+        # 218 frames that were never lost, they went to ASR. Crying wolf here is not
+        # harmless, it is what hides a genuine drop, which `_on_frame` above now reports.
+        await self._wake_channel.push(
+            AudioFrame(seq=self._wake_seq, captured_at_ms=frame.captured_at_ms, pcm=frame.pcm)
+        )
+        self._wake_seq += 1
         # Give the detector task a chance to consume this frame before we decide whether it
         # fired. Without this hop the wake event is observed one frame (20 ms) late, which
         # would be 13% of the wakeword budget spent on scheduling.
@@ -567,7 +642,12 @@ class VoicePipeline:
             # both double-count the turn and lose that measurement.
             if self.turn_latency is not None and not self.turn_latency.cancelled:
                 self.latency.commit(self.turn_latency)
-            if self.state not in (AgentState.IDLE, AgentState.LISTENING):
+            # `_resuming` is set by a cancellation that is about to reopen the microphone.
+            # Without it the client sees THINKING -> IDLE -> LISTENING for an interrupt that
+            # never idled: the button in the interface blinks off and back on, and the
+            # gateway's re-arm-on-idle fires a press into a pipeline that is already
+            # listening. An interrupt-and-listen is one transition, so it emits one.
+            if not self._resuming and self.state not in (AgentState.IDLE, AgentState.LISTENING):
                 await self._enter(AgentState.IDLE)
             self._reset_turn_state()
 
@@ -618,9 +698,24 @@ class VoicePipeline:
             return True
         return energy_db > threshold + self.config.barge_in.energy_margin_db
 
-    async def _cancel_turn(self, reason: str) -> None:
+    async def _cancel_turn(self, reason: str, *, resume: bool | None = None) -> None:
+        """Cancel the turn in flight.
+
+        `resume` says whether to go back to LISTENING with the recent audio as pre-roll,
+        rather than to IDLE. It is a parameter and not a lookup of
+        `barge_in.resume_listening` because the two callers mean different things: a
+        barge-in resumes only if barge-in says so, an explicit press always resumes (the
+        user pressed *in order to speak*), and the stop button never resumes. Left as None
+        it keeps the barge-in rule, which is what `_watch_for_barge_in` wants.
+        """
+        if resume is None:
+            resume = self.config.barge_in.resume_listening and reason == "barge_in"
         if self._turn_task is None or self._turn_task.done():
             self._barge_in_speech_ms = 0.0
+            if resume:
+                # Nothing to cancel, but the user still asked to speak. Open the microphone
+                # rather than returning silently, which is the whole defect being fixed.
+                await self._resume_listening()
             return
         self.counters.barge_ins += 1
         self.counters.tts_cancellations += 1
@@ -630,6 +725,7 @@ class VoicePipeline:
 
         # Order matters. Stop making audio, stop the compute request, then tear down the
         # task, then drop whatever is already queued for the speaker.
+        self._resuming = resume
         await self.synthesizer.cancel()
         await self.handler.cancel()
         task, self._turn_task = self._turn_task, None
@@ -645,22 +741,31 @@ class VoicePipeline:
 
         self._barge_in_speech_ms = 0.0
         self._reset_turn_state()
+        self._resuming = False
 
-        if self.config.barge_in.resume_listening and reason == "barge_in":
-            # The user is already mid-sentence. Keep the audio that triggered the interrupt
-            # as pre-roll and go straight back to listening.
-            pre_roll = self._recent.snapshot(
-                self.config.barge_in.min_speech_ms + self.config.wakeword.pre_roll_ms
-            )
-            self.turn = Turn(session_id=self.session.id)
-            self.turn_latency = self.latency.start_turn(self.turn.id)
-            self.turn_latency.wake_audio_ms = LatencyRecorder.mark()
-            self.turn_latency.wake_detected_ms = self.turn_latency.wake_audio_ms
-            self._turn_began_with_wake = False
-            await self._enter(AgentState.LISTENING)
-            await self._open_asr(pre_roll)
+        if resume:
+            await self._resume_listening()
         else:
             await self._enter(AgentState.IDLE)
+
+    async def _resume_listening(self) -> None:
+        """Open a fresh utterance immediately, with the audio already in hand as pre-roll.
+
+        Used after a barge-in and after an explicit press. In both cases the user is
+        already talking, or about to; making them wait for a wakeword to be re-armed would
+        clip the first word off the thing they interrupted for."""
+        pre_roll = self._recent.snapshot(
+            self.config.barge_in.min_speech_ms + self.config.wakeword.pre_roll_ms
+        )
+        self.turn = Turn(session_id=self.session.id)
+        self.turn_latency = self.latency.start_turn(self.turn.id)
+        self.turn_latency.wake_audio_ms = LatencyRecorder.mark()
+        self.turn_latency.wake_detected_ms = self.turn_latency.wake_audio_ms
+        # No wake phrase in front of this audio, so nothing to strip: stripping here would
+        # eat a real first word.
+        self._turn_began_with_wake = False
+        await self._enter(AgentState.LISTENING)
+        await self._open_asr(pre_roll)
 
     # ------------------------------------------------------------------ housekeeping
 

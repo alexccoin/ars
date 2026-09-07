@@ -20,7 +20,7 @@ import logging
 from collections.abc import AsyncIterator, Callable
 
 from ars_protocol import (
-    SAMPLE_RATE_HZ, Language, ServerEvent, Session, Transcript, Turn,
+    FRAME_MS, SAMPLE_RATE_HZ, Language, ServerEvent, Session, Transcript, Turn,
 )
 from ars_voice.audio.sinks import SpeakerSink
 from ars_voice.audio.sources import MicrophoneSource
@@ -82,7 +82,15 @@ class VoiceLoop:
     """
 
     def __init__(self, *, handler: TurnHandler, session: Session,
-                 on_event: Callable[[dict], object], language: Language | None = None) -> None:
+                 on_event: Callable[[dict], object], language: Language | None = None,
+                 source: Callable[[], object] | None = None) -> None:
+        self._source = source
+        """Where audio comes from. Defaults to the machine's microphone.
+
+        A seam, not a feature: without it nothing about this loop — re-arming between
+        turns, what a press does while A.R.S is talking, whether a dropped frame is
+        noticed — can be tested anywhere except on a laptop with a microphone and a person
+        willing to talk into it. That is how all of it went untested."""
         self._handler = handler
         self._session = session
         self._on_event = on_event
@@ -103,7 +111,12 @@ class VoiceLoop:
         re-arms. Safe now that barge-in is off, because the pipeline does not listen while
         it is speaking and cannot hear itself."""
         self._sink: SpeakerSink | None = None
+        self._mic: object | None = None
         self._task: asyncio.Task | None = None
+        self._presses: set[asyncio.Task] = set()
+        """Strong references to in-flight presses. A task nobody holds can be garbage
+        collected mid-await, which would lose the press silently — the exact class of bug
+        this whole path exists to stop."""
         self._lock = asyncio.Lock()
         self.warm_up_ms: dict[str, float] = {}
 
@@ -148,11 +161,14 @@ class VoiceLoop:
     """
 
     async def _pump(self) -> None:
-        mic = MicrophoneSource()
+        mic = self._source() if self._source is not None else MicrophoneSource()
+        self._mic = mic
         watchdog = asyncio.create_task(self._warn_if_deaf(), name="voice-watchdog")
         try:
             async for event in self._pipeline.run(self._counted(mic.frames())):
                 await self._emit(event)
+                if getattr(event, "type", None) == "reply_done":
+                    self._log_turn_latency()
                 # Re-arm on every return to idle, so a missed window costs a moment
                 # rather than the whole conversation.
                 if (self._holding and getattr(event, "type", None) == "state"
@@ -186,6 +202,34 @@ class VoiceLoop:
         async for frame in frames:
             self._frames += 1
             yield frame
+
+    def _log_turn_latency(self) -> None:
+        """One line per spoken turn, with the numbers the budget is written in.
+
+        Without it the only latency evidence for a real turn is wall-clock timestamps in a
+        log full of SQL. It is also the only place the microphone's drop count is ever
+        looked at, which is how a drop stayed silent long enough to be mistaken for the
+        cause of a completely different bug.
+        """
+        if self._pipeline is None:
+            return
+        turns = self._pipeline.latency.turns
+        if not turns:
+            return
+        row = " ".join(
+            f"{stage.value}={ms:.0f}ms" for stage, ms in turns[-1].durations().items()
+        )
+        dropped = getattr(self._mic, "dropped_frames", 0)
+        log.info(
+            "turn latency: %s | frames=%d dropped=%d gaps=%d",
+            row or "(nothing measured)", self._frames, dropped,
+            self._pipeline.counters.frame_gaps,
+        )
+        if dropped:
+            log.warning(
+                "the microphone dropped %d frames (%.0f ms) this session — the pipeline is "
+                "not keeping up with capture", dropped, dropped * FRAME_MS,
+            )
 
     async def _warn_if_deaf(self) -> None:
         await asyncio.sleep(self.SILENCE_ALARM_S)
@@ -231,14 +275,51 @@ class VoiceLoop:
 
         `hold` distinguishes the user pressing from the loop re-arming itself; only a real
         press turns listening on.
+
+        Stays synchronous because `Ars.listen` calls it without awaiting; the work is handed
+        to a task on the loop that is already running underneath both callers.
         """
         if not hold:
             self._holding = True
-        if self._wake is not None:
-            self._wake.trigger()
-            log.info("press: armed %s (hold=%s)", type(self._wake).__name__, hold)
-        else:
-            log.error("press: no wakeword engine — the press went nowhere")
+        if self._pipeline is None:
+            log.error("press: no pipeline — the press went nowhere")
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No loop: nothing is consuming audio either, so arming is all that is
+            # meaningful and the turn will begin when the pump starts.
+            if self._wake is not None:
+                self._wake.trigger()
+            return
+        task = loop.create_task(self._press(hold=hold), name="voice-press")
+        self._presses.add(task)
+        task.add_done_callback(self._presses.discard)
+
+    async def _press(self, *, hold: bool) -> None:
+        """Route the press through the pipeline and log what actually happened.
+
+        It used to log "press: armed" unconditionally, which was true and useless: arming
+        the engine does nothing at all unless the pipeline is IDLE, because that is the only
+        state in which the wakeword is fed frames. Alex saw "press: armed" followed by a
+        wakeword firing and concluded the press had worked — the firing belonged to the
+        loop's own re-arm from the previous turn, and his press had been deferred behind a
+        13-second reply. A log line that cannot distinguish those two is worse than none.
+        """
+        assert self._pipeline is not None
+        state = getattr(self._pipeline.state, "value", "?")
+        try:
+            outcome = await self._pipeline.request_turn("user_press")
+        except Exception:
+            log.exception("press failed")
+            return
+        log.info("press: %s (state was %s, hold=%s)", outcome, state, hold)
+        if outcome == "unsupported":
+            await self._emit_dict({
+                "type": "error", "code": "NoWakeword",
+                "message": "the microphone button is not wired to a wakeword engine",
+                "recoverable": False,
+            })
 
     def release(self) -> None:
         """The user switched the microphone off. Stop re-arming; finish any turn in
@@ -253,6 +334,9 @@ class VoiceLoop:
     async def stop(self) -> None:
         async with self._lock:
             self._holding = False
+            for press in list(self._presses):
+                press.cancel()
+            self._presses.clear()
             if self._task is not None:
                 self._task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

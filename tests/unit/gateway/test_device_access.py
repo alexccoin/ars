@@ -50,3 +50,42 @@ def test_the_names_the_client_and_server_must_agree_on() -> None:
     these drift apart, pairing silently stops working on the second page load."""
     assert QUERY_PARAM == "t"
     assert COOKIE == "ars_device"
+
+
+# ------------------------------------------------- the cross-site websocket hole
+
+@pytest.mark.parametrize("origin,host,allowed", [
+    ("http://127.0.0.1:8787", "127.0.0.1:8787", True),    # A.R.S's own page
+    ("http://192.168.26.74:8787", "192.168.26.74:8787", True),  # the paired phone
+    (None, "127.0.0.1:8787", True),                        # a script, not a browser
+    ("", "127.0.0.1:8787", True),
+    ("https://evil.example", "127.0.0.1:8787", False),     # an advertisement in a tab
+    ("http://127.0.0.1:9999", "127.0.0.1:8787", False),    # another local app
+    ("http://localhost:8787", "127.0.0.1:8787", False),    # same machine, other name
+    ("null", "127.0.0.1:8787", False),                     # a sandboxed frame
+    ("file://", "127.0.0.1:8787", False),
+])
+def test_only_our_own_page_may_open_the_socket(origin, host, allowed) -> None:
+    """WebSockets are exempt from the same-origin policy and trigger no preflight, so any
+    page open in any browser on this Mac could open ws://127.0.0.1:<port>/ws. The
+    handshake then arrives from loopback and, under "loopback is the owner", was treated
+    as Alex: an advertisement in an iframe could ask A.R.S questions and read the answers —
+    recalled memory, passages from his documents, everything he has taught it. With the
+    standing web-search grant it is two-way, because "search the web for <private answer>"
+    sends that answer to a server the attacker chose.
+
+    Browsers always send Origin on a handshake and script cannot forge it."""
+    from ars_gateway.access import origin_is_own_page
+
+    assert origin_is_own_page(origin, host) is allowed
+
+
+def test_a_token_that_is_not_ascii_is_refused_not_a_crash() -> None:
+    """`secrets.compare_digest` raises TypeError on non-ASCII, and the presented token
+    comes straight off the wire — `?t=parolă` turned a failed authentication into an
+    unhandled 500. Not a bypass; an error path an unauthenticated caller controls."""
+    from ars_gateway.access import tokens_match
+
+    assert tokens_match("parolă", "expected") is False
+    assert tokens_match("", "expected") is False
+    assert tokens_match("expected", "expected") is True

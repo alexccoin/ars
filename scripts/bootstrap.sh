@@ -21,12 +21,21 @@ if ((${#missing[@]})); then
 fi
 
 say "Python environment (3.12)"
-uv venv --python 3.12
-uv pip install -e packages/protocol -e packages/core -e services/skills-runtime
-for svc in services/*/; do
-  [[ -f "$svc/pyproject.toml" ]] && uv pip install -e "$svc"
-done
-uv pip install pytest pytest-asyncio ruff mypy
+# `uv sync` alone is the whole story now: the root pyproject.toml depends on every
+# application this repo ships (the gateway, the desktop shell, memory's embedding
+# backend, voice's ASR/TTS/VAD/wakeword backends), so a bare sync leaves a working
+# environment — no more hand `uv pip install`-ing individual packages or extras. Do not
+# add per-package installs back here; anything installed outside pyproject.toml is
+# exactly what the next `uv sync` will silently remove (see the comment at the top of
+# the root pyproject.toml). `uv sync --dry-run` shows what a real sync would change.
+uv sync
+
+say "PyInstaller (only needed to build A.R.S.app — skip if you're not packaging)"
+# --inexact matters: `--package ars-desktop` alone scopes the sync to *only* that
+# member's own dependency closure and, being an exact sync by default, would uninstall
+# every voice/memory backend and dev tool this same command just installed above.
+# --inexact makes it additive instead of a second, narrower exact sync.
+echo "Run: uv sync --package ars-desktop --group build --inexact"
 
 say "Local reasoning model (optional but recommended)"
 if have ollama; then

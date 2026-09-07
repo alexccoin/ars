@@ -15,6 +15,12 @@ first, not an edit of it. :meth:`read` folds the two. Rewriting in place would m
 (or an attacker with write access) could quietly change history; with append-only, the
 worst they can do is append, and the original line is still there.
 
+**It records where the turn ran, not only what it touched.** A turn that makes no tool
+call writes no decision line, and yet it may have sent the user's recalled memory to a
+provider. :meth:`AuditLog.routing` writes one content-free line per turn naming the
+backend, the model and whether it ran on this machine, so "what left this machine, and to
+where" has an answer for every turn rather than only for the ones that used a tool.
+
 **Never a second copy of the user's data.** Identifiers, capability, resource, verdict,
 reason. No email bodies, no file contents, no tool payloads, no model text. If the audit
 log leaks, it reveals that A.R.S read mail from ``from:bank.ro`` at 14:02 - not what the
@@ -42,6 +48,7 @@ SCHEMA_VERSION: Final = 1
 
 KIND_DECISION: Final = "decision"
 KIND_OUTCOME: Final = "outcome"
+KIND_ROUTING: Final = "routing"
 
 MAX_RESOURCE_CHARS: Final = 512
 """Resources are identifiers - a URL, a mailbox query, a file path. Anything longer is
@@ -50,6 +57,11 @@ being used to smuggle content into the log."""
 MAX_OUTCOME_CHARS: Final = 160
 """Outcome is "ok" or an error class. Not a stack trace, and definitely not a response
 body."""
+
+MAX_LABEL_CHARS: Final = 120
+"""Backend name, model name, policy, routing reason. Identifiers chosen by us, not by the
+user and not by a page we scraped - but capped and cleaned like everything else, because
+a model name can come from configuration and configuration can come from anywhere."""
 
 _CONTROL_CATEGORIES = frozenset({"Cc", "Cf", "Co", "Cs", "Cn"})
 
@@ -202,6 +214,98 @@ class AuditLog:
             "user_confirmed": user_confirmed,
         }
         await self._append(payload)
+
+    # ------------------------------------------------------------------ routing
+
+    async def routing(
+        self,
+        *,
+        session_id: str,
+        turn_id: str,
+        backend: str,
+        model: str,
+        runs_locally: bool,
+        policy: str = "",
+        reason: str = "",
+        escalated: bool = False,
+        refused: bool = False,
+        sensitive_rules: Iterable[str] = (),
+        at_ms: int | None = None,
+    ) -> str:
+        """Record where a turn's reasoning was actually performed.
+
+        The guard's decision lines answer "what did it do with my email". They cannot
+        answer **"what left this machine, and to where"** - a turn that makes no tool call
+        writes no decision line at all, and yet it may have shipped the user's recalled
+        memory to a provider. ``RoutingDecision`` knew the answer and it only ever reached
+        turn statistics, which are in-process and die with the turn.
+
+        So every turn writes one of these, local turns included: an audit log that records
+        only the turns that left is an audit log you cannot trust when it says nothing.
+        ``runs_locally=False`` is the line a reader greps for.
+
+        Content-free, like every other line here. ``sensitive_rules`` carries the NAMES of
+        the classifier rules that fired ("health.condition"), never the text that matched
+        them - the whole point of refusing to route that text is not to copy it somewhere
+        else. Returns the id of the line written.
+        """
+        from ars_protocol import new_id, now_ms
+
+        record_id = new_id("rte")
+        payload: dict[str, Any] = {
+            "v": SCHEMA_VERSION,
+            "kind": KIND_ROUTING,
+            "id": record_id,
+            "at_ms": at_ms if at_ms is not None else now_ms(),
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "backend": _clean(backend, max_chars=MAX_LABEL_CHARS, redactor=self._redactor),
+            "model": _clean(model, max_chars=MAX_LABEL_CHARS, redactor=self._redactor),
+            "runs_locally": bool(runs_locally),
+            "left_the_device": not runs_locally,
+            "policy": _clean(policy, max_chars=MAX_LABEL_CHARS, redactor=self._redactor),
+            "reason": _clean(reason, max_chars=MAX_LABEL_CHARS, redactor=self._redactor),
+            "escalated": bool(escalated),
+            "refused": bool(refused),
+            "sensitive_rules": sorted({
+                cleaned for rule in sensitive_rules
+                if (cleaned := _clean(rule, max_chars=MAX_LABEL_CHARS,
+                                      redactor=self._redactor))
+            }),
+        }
+        await self._append(payload)
+        return record_id
+
+    async def read_routing(
+        self,
+        *,
+        since_ms: int | None = None,
+        until_ms: int | None = None,
+        turn_id: str | None = None,
+        left_the_device_only: bool = False,
+        limit: int | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        """Routing lines, oldest first. Plain dicts: there is no protocol type for this
+        yet (``packages/protocol`` is the only place one may be defined, and defining a
+        second one here would be the duplication CLAUDE.md rule 1 forbids)."""
+        rows = await asyncio.to_thread(self._read_lines)
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            if row.get("kind") != KIND_ROUTING:
+                continue
+            at = int(row.get("at_ms", 0))
+            if since_ms is not None and at < since_ms:
+                continue
+            if until_ms is not None and at >= until_ms:
+                continue
+            if turn_id is not None and row.get("turn_id") != turn_id:
+                continue
+            if left_the_device_only and not row.get("left_the_device"):
+                continue
+            out.append(row)
+        if limit is not None and len(out) > limit:
+            out = out[-limit:]
+        return tuple(out)
 
     # ------------------------------------------------------------------ reading
 

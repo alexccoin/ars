@@ -31,6 +31,8 @@ from ars_memory.config import MemoryConfig
 from ars_memory.store import SqliteMemoryStore
 from ars_protocol import (
     Capability,
+    GuardQuery,
+    Verdict,
     RangeFinding,
     VitalKind,
     VitalReading,
@@ -46,7 +48,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .access import (
     COOKIE, QUERY_PARAM, DeviceTokenMiddleware, is_loopback, lan_address,
-    load_or_create_token,
+    load_or_create_token, origin_is_own_page, tokens_match,
 )
 from .brain import Answer, Tier, TieredBrain
 from .documents import DocumentLibrary, UnsupportedDocument
@@ -347,6 +349,14 @@ async def websocket(ws: WebSocket) -> None:
     # Starlette's HTTP middleware does not see WebSocket handshakes, so the check is
     # repeated here rather than assumed. This socket is the one that can ask A.R.S to act,
     # so it is the last place an unpaired device should be able to reach.
+    # Checked BEFORE loopback, because loopback is exactly where this attack comes from:
+    # a page open in any browser on this Mac can open a socket to 127.0.0.1 and would
+    # otherwise be treated as the owner.
+    if not origin_is_own_page(ws.headers.get("origin"), ws.headers.get("host")):
+        log.warning("refused a websocket from origin %r", ws.headers.get("origin"))
+        await ws.close(code=4403, reason="this page is not allowed to talk to A.R.S")
+        return
+
     if not is_loopback(ws.client.host if ws.client else None):
         presented = (
             ws.query_params.get(QUERY_PARAM)
@@ -354,7 +364,7 @@ async def websocket(ws: WebSocket) -> None:
             or (ws.headers.get("authorization", "")[7:].strip()
                 if ws.headers.get("authorization", "").lower().startswith("bearer ") else None)
         )
-        if presented is None or not secrets.compare_digest(presented, DEVICE_TOKEN):
+        if presented is None or not tokens_match(presented, DEVICE_TOKEN):
             log.warning("refused a websocket from %s",
                         ws.client.host if ws.client else "unknown")
             await ws.close(code=4401, reason="this device is not paired with A.R.S")
@@ -515,6 +525,39 @@ async def status() -> dict:
 
 # --------------------------------------------------------------------------- health
 
+async def _guard_health(capability: Capability, resource: str, summary: str) -> None:
+    """Put a health request through the guard, and record the outcome.
+
+    These endpoints called the store directly. `HEALTH_READ` (HIGH, private) and
+    `HEALTH_WRITE` (CRITICAL, effectful) were therefore decorative: no grant required, no
+    consent asked, and — the part that matters most — no line in the audit log. "Who read
+    my health data, and when" had no answer, and neither did "where did this reading come
+    from". Non-negotiable #3 says nothing reaches private data without a guard ALLOW, and
+    this was private data with no guard at all.
+
+    A DENY raises 403 rather than returning empty: an empty series and a refused series
+    are different facts, and a health record that quietly shows nothing is worse than one
+    that says it will not tell you.
+    """
+    query = GuardQuery(
+        session_id=ars.session.id,
+        turn_id="trn_" + "0" * 20,
+        capability=capability,
+        resource=resource,
+        summary=summary,
+    )
+    decision = await ars.guard.evaluate(query)
+    if decision.verdict is Verdict.DENY:
+        raise HTTPException(403, decision.explanation)
+    if decision.verdict is Verdict.ASK:
+        # 428 Precondition Required: the request is well formed and refused only for
+        # want of a decision the user has not made yet. The interface turns this into the
+        # consent prompt the guard already wrote, in the user's language.
+        raise HTTPException(
+            428, decision.explanation or "A.R.S needs your permission for this."
+        )
+
+
 @app.post("/api/health/readings")
 async def record_reading(body: dict) -> dict:
     """Record one measurement.
@@ -533,6 +576,10 @@ async def record_reading(body: dict) -> dict:
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(400, "value must be a number") from exc
 
+    await _guard_health(
+        Capability.HEALTH_WRITE, kind.value,
+        f"save a {kind.display_name} reading of {value} {kind.unit} to your health record",
+    )
     reading = VitalReading(kind=kind, value=value, note=body.get("note") or None)
     if body.get("measured_at_ms"):
         reading = reading.model_copy(update={"measured_at_ms": int(body["measured_at_ms"])})
@@ -552,6 +599,10 @@ async def read_readings(kind: str | None = None, days: int = 30) -> dict:
     `outside_range` is a comparison against a named source, never a judgement: the
     protocol has no type for a diagnosis and this endpoint cannot invent one.
     """
+    await _guard_health(
+        Capability.HEALTH_READ, kind or "all",
+        f"look at your health readings from the last {days} days",
+    )
     since = int(time.time() * 1000) - days * 86_400_000
     if kind:
         try:
@@ -585,6 +636,8 @@ async def read_readings(kind: str | None = None, days: int = 30) -> dict:
 @app.delete("/api/health/readings/{reading_id}")
 async def forget_reading(reading_id: str) -> dict:
     """Really delete it. Non-negotiable #7 applies here with more force than anywhere."""
+    await _guard_health(Capability.HEALTH_WRITE, reading_id,
+                        "delete a reading from your health record")
     return {"id": reading_id, "removed": await ars.vitals.forget(record_id=reading_id)}
 
 

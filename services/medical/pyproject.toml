@@ -14,6 +14,13 @@ dependencies = [
     "aiosqlite>=0.20",
 ]
 
+[project.optional-dependencies]
+# Only `ars_medical.devices.ble_backend.BleDeviceBackend.__init__` imports bleak, per
+# CLAUDE.md rule 2 ("no vendor SDK outside a backend implementation"). Kept optional so
+# the rest of this package — and every test, which uses MockDeviceBackend — never needs
+# a Bluetooth stack installed. Install with `uv sync --extra ble`.
+ble = ["bleak>=1.0"]
+
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.24"]
 

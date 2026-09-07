@@ -40,7 +40,9 @@ hit is noise.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
+import unicodedata
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 
@@ -95,6 +97,8 @@ from .errors import (
 )
 from .language import DiacriticRepairStream, ReplyLanguage, resolve_reply_language
 from .reasoning import ReasoningMode
+
+log = logging.getLogger("ars_compute.turn")
 
 RESOURCE_KEYS: tuple[str, ...] = (
     "url", "uri", "link", "path", "file", "filename", "repo", "repository",
@@ -160,9 +164,17 @@ class TurnOrchestrator:
         announce_injections: bool = True,
         taint_backstop: bool = True,
         learner: object | None = None,
+        audit: object | None = None,
     ) -> None:
         self.backend = backend
         self.guard = guard
+        self.audit = audit if audit is not None else getattr(guard, "audit", None)
+        """Where the routing line goes. Defaults to the guard's own log rather than
+        requiring every caller to pass one: the gateway builds the guard with an
+        `AuditLog` already, and a control that only works when someone remembers to wire
+        it is a control that is off in production. Pass `audit=` explicitly to send
+        routing lines somewhere else; pass a non-None object with no `routing` method and
+        nothing is written."""
         self.skills = skills
         self.assembler = assembler or ContextAssembler(budget=budget or ContextBudget())
         self.max_tool_calls = max_tool_calls_per_turn
@@ -376,7 +388,12 @@ class TurnOrchestrator:
             async for e in self._fail(turn, language.language, "context_overflow",
                                       "context_overflow", reply_parts):
                 yield e
-        except CloudRoutingRefused:
+        except CloudRoutingRefused as exc:
+            # The refusal is the single most important thing this log can contain: it is
+            # the record that sensitive content was about to leave and did not. Written
+            # before the apology is spoken, for the same reason the guard writes its
+            # decision before the action.
+            await self._audit_routing(session, turn, stats, refused=exc)
             async for e in self._fail(turn, language.language, "cloud_refused",
                                       "sensitive_content_not_routed", reply_parts):
                 yield e
@@ -394,6 +411,7 @@ class TurnOrchestrator:
         outcome.tainted = outcome.tainted or turn.tainted
         stats.total_ms = (time.perf_counter() - t_start) * 1000.0
         self._record_backend_stats(stats)
+        await self._audit_routing(session, turn, stats)
 
         yield ReplyDone(turn_id=turn.id, text=text, language=language.language)
 
@@ -634,10 +652,21 @@ class TurnOrchestrator:
                 stats.backend, stats.model, stats.ran_locally = d.backend, d.model, d.runs_locally
             backend = backend.active
         info = getattr(backend, "info", None)
+        # Whether the router already spoke. Read BEFORE `stats.backend` is assigned
+        # below: the old spelling tested `not stats.backend` on the line after setting
+        # it, so the test was never true and `ran_locally` kept its default of True — a
+        # turn on a cloud backend wired without a router was recorded as having stayed on
+        # the machine. That was cosmetic while this only fed telemetry; it is not
+        # cosmetic now that `_audit_routing` writes it to the audit log as the answer to
+        # "did this leave the device".
+        routed = bool(stats.backend)
         if info is not None:
             stats.backend = stats.backend or info.name
             stats.model = stats.model or info.model
-            stats.ran_locally = info.runs_locally if not stats.backend else stats.ran_locally
+            if not routed:
+                stats.ran_locally = info.runs_locally
+        elif not routed:
+            stats.ran_locally = bool(getattr(backend, "runs_locally", True))
         last = getattr(backend, "last_stats", None)
         if last is not None:
             stats.output_tokens += last.output_tokens
@@ -649,6 +678,61 @@ class TurnOrchestrator:
                 stats.output_tokens += sum(s.output_tokens for s in all_stats[-stats.rounds:])
         if info is not None:
             stats.est_cost_usd = info.price.cost(stats.input_tokens, stats.output_tokens)
+
+    async def _audit_routing(self, session: Session, turn: Turn, stats: TurnStats, *,
+                             refused: CloudRoutingRefused | None = None) -> None:
+        """One content-free line per turn: which backend answered it, and whether that
+        backend runs on this machine.
+
+        Why this exists: `RoutingDecision` already knew, and only ever reached `TurnStats`
+        — an in-process dataclass that dies with the turn. So "what left this machine, and
+        to where" had no answer on disk, including for turns that genuinely did leave. A
+        turn with no tool call writes no guard decision line at all, so this cannot be
+        derived from what was already logged.
+
+        Local turns are logged too, deliberately. A log that records only egress is a log
+        whose silence means nothing — you cannot tell "nothing left" from "the writer was
+        never called".
+
+        Never raises: an audit write that fails must not take the user's answer with it.
+        The failure is logged by the audit log itself; a turn that reached this point has
+        already produced a reply the user is entitled to.
+        """
+        write = getattr(self.audit, "routing", None)
+        if write is None:
+            return
+        decision = (self.backend.last_decision
+                    if isinstance(self.backend, Router) else None)
+        rules = tuple(
+            f.rule or "declared" for f in decision.sensitive_findings
+        ) if decision is not None else ()
+        if refused is not None:
+            rules = rules or (refused.rule,)
+        try:
+            await write(
+                session_id=session.id,
+                turn_id=turn.id,
+                backend=(refused.backend if refused is not None
+                         else stats.backend or type(self.backend).__name__),
+                model=stats.model or "?",
+                # A refused turn never reached a backend, so nothing left the device —
+                # but it is recorded as an egress attempt via `refused`, not laundered
+                # into a clean local line.
+                runs_locally=True if refused is not None else stats.ran_locally,
+                policy=str(decision.policy.value) if decision is not None else "",
+                reason=(f"refused: sensitive content matched {refused.rule!r}"
+                        if refused is not None
+                        else (decision.reason if decision is not None else "no router")),
+                escalated=bool(decision.escalated) if decision is not None else False,
+                refused=refused is not None,
+                sensitive_rules=rules,
+            )
+        except Exception:
+            # Logged, never raised. An audit log that cannot be written is a real
+            # problem and has to be visible — but it is not a reason to throw away an
+            # answer the user is already listening to.
+            log.warning("could not write the routing audit line for turn %s",
+                        turn.id, exc_info=True)
 
     def _observations(self, session: Session, turn: Turn, transcript: Transcript,
                       language: Language) -> list[ObservationProposed]:
@@ -683,9 +767,43 @@ def _summary(spec: ToolSpec, capability: Capability | None, resource: str | None
     return str(entry[key]).format(tool=spec.name, resource=resource or "")
 
 
+MAX_LABEL_CHARS = 96
+"""Cap on an untrusted origin spliced into a sentence A.R.S speaks. Long enough for a URL
+or a page title, short enough that nobody can smuggle a paragraph into it."""
+
+_LABEL_DISALLOWED = frozenset({"Cc", "Cf", "Co", "Cs", "Cn"})
+"""Control, format (bidi overrides, zero-width joiners), private use, surrogate,
+unassigned. None of these belong in a spoken warning."""
+
+
+def _safe_label(text: str | None) -> str:
+    """Make an untrusted origin safe to splice into a notice the user reads or hears.
+
+    `Provenance.label` is attacker-controlled — for a scraped page it is the `<title>`,
+    which the page's author wrote. Both notices below quote it inside a sentence spoken in
+    A.R.S's own voice ("the content I fetched from {source} …"), so an unsanitised label
+    lets the author of a hostile page put their words into A.R.S's mouth, in a security
+    warning, which is the sentence a user is most likely to believe. `ars_auth.messages`
+    solved this for the guard's own prompts with `safe_fragment`; this is the same
+    treatment for the compute-side backstop, spelled locally because compute does not
+    import auth.
+
+    Normalise, strip control and format characters, collapse whitespace, truncate.
+    """
+    if not text:
+        return ""
+    normalised = unicodedata.normalize("NFKC", text)
+    kept = "".join(c for c in normalised
+                   if unicodedata.category(c) not in _LABEL_DISALLOWED)
+    collapsed = " ".join(kept.split())
+    if len(collapsed) > MAX_LABEL_CHARS:
+        collapsed = collapsed[: MAX_LABEL_CHARS - 1].rstrip() + "…"
+    return collapsed
+
+
 def _taint_label(ctx: AssembledContext) -> str:
     for p in ctx.taint_sources:
-        return p.label or p.uri or p.source.value
+        return _safe_label(p.label) or _safe_label(p.uri) or p.source.value
     return "an outside source"
 
 
@@ -693,7 +811,7 @@ def _source_label(ctx: AssembledContext) -> str:
     for item in ctx.items:
         if item.injection_markers:
             p: Provenance = item.block.provenance
-            return p.label or p.uri or p.source.value
+            return _safe_label(p.label) or _safe_label(p.uri) or p.source.value
     return SourceKind.SKILL_OUTPUT.value
 
 

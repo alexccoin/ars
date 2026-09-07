@@ -2,12 +2,62 @@
 name = "ars-workspace"
 version = "0.1.0"
 description = "A.R.S — a private, local-first voice and compute assistant"
-requires-python = ">=3.11"
+# Was ">=3.11" (unbounded above). uv locks a *universal* resolution valid for the whole
+# declared range, and for every optional-dependency group any workspace member
+# declares (see the ars-voice comment below) — so an unbounded upper end forced uv to
+# also find a solution for a hypothetical Python 3.15, which it cannot (services/voice's
+# `wakeword` extra depends on a `tflite-runtime` release with no wheels past cp311).
+# CLAUDE.md already pins the toolchain to "Python 3.12 via uv"; making that the actual
+# constraint, not just the doc, is what makes the lock resolvable at all.
+requires-python = ">=3.12,<3.13"
 authors = [{ name = "Alexandru Stratulat", email = "alex.ccoin@gmail.com" }]
 license = { file = "LICENSE" }
+# The root package has no dependencies of its own to run — every ars-* package is
+# useful only through one of the applications below. Deliberately depending on those
+# applications here (rather than leaving this list empty) is what makes a bare `uv sync`
+# safe: uv performs an *exact* sync by default, uninstalling anything in .venv that
+# isn't part of the resolved set. With an empty root and no `--all-packages`, that
+# resolved set used to be "the dev tool group and nothing else", so `uv sync` quietly
+# uninstalled the desktop app, pywebview, and every voice/memory backend extra that had
+# been `uv pip install`-ed by hand. Anyone who has ever run `uv pip install X` outside
+# this file has just told the next `uv sync` to remove X.
+#
+# If a dependency belongs to A.R.S. and should survive `uv sync`, it must be reachable
+# from one of these three lines (directly, or transitively through ars-gateway/
+# ars-desktop) — not `uv pip install`-ed by hand. `uv sync --dry-run` shows exactly
+# what a real sync would add or remove; run it before trusting a manual install to stick.
+dependencies = [
+    "ars-desktop; sys_platform == 'darwin'",
+    # `services/gateway/src/ars_gateway/app.py` does `from ars_medical import
+    # MedicalConfig, SqliteMedicalStore` at module scope — a hard runtime import — but
+    # `services/gateway/pyproject.toml` never lists `ars-medical` in its own
+    # `dependencies`. It only worked because something had `uv pip install -e
+    # services/medical`-ed it by hand. Listed here as a stopgap so `uv sync` doesn't
+    # silently ship a gateway that fails on import; the real fix is a one-line addition
+    # to services/gateway/pyproject.toml, not mine to make. Remove this line once that
+    # lands.
+    "ars-medical",
+    "ars-memory[embeddings]",
+    # `ars-voice[all]` includes `openwakeword`, which pins `tflite-runtime` for
+    # `sys_platform == 'linux'` at a version with no wheel past cp311 — with no upper
+    # bound on this project's own `requires-python`, uv's *universal* resolution (valid
+    # for every platform and Python in range, not just the one running it) used to fail
+    # outright trying to satisfy that unreachable-on-this-machine branch. Fixed by
+    # `requires-python` and `[tool.uv] environments` above narrowing the lock to what
+    # this repo actually targets, rather than by dropping the extra.
+    "ars-voice[all]",
+]
+
+[tool.uv]
+# uv's universal lock is otherwise resolved for every platform, not just the one this
+# repo actually targets — CLAUDE.md: "Target hardware: Apple Silicon, arm64". Without
+# this, resolution still tries (and, for the `wakeword` extra, fails) to find a
+# `sys_platform == 'linux'` solution nobody here runs. Narrowing to the real target is
+# the honest fix, not a workaround for it.
+environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
 
 [tool.uv.workspace]
-members = ["packages/protocol", "packages/core", "packages/telemetry", "services/*"]
+members = ["packages/protocol", "packages/core", "packages/telemetry", "services/*", "apps/desktop"]
 
 [tool.uv.sources]
 ars-protocol = { workspace = true }
@@ -19,6 +69,8 @@ ars-medical = { workspace = true }
 ars-auth = { workspace = true }
 ars-skills-runtime = { workspace = true }
 ars-voice = { workspace = true }
+ars-gateway = { workspace = true }
+ars-desktop = { workspace = true }
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.7", "mypy>=1.13", "anyio>=4"]

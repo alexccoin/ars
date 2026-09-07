@@ -16,6 +16,7 @@ import { createConsole } from './panels/console.js';
 import { createDeck } from './panels/deck.js';
 import { createBrainPanel } from './panels/brain.js';
 import { createDocumentsPanel } from './panels/documents.js';
+import { createVitalsPanel } from './panels/vitals.js';
 import { createGrantsPanel } from './panels/grants.js';
 import { createAuditPanel } from './panels/audit.js';
 import { createStatusPanel } from './panels/status.js';
@@ -158,12 +159,16 @@ async function main() {
     root: deck.view('audit', { labelKey: 'deck.tab.audit', titleKey: 'audit.title', icon: 'audit' }),
     hud, getLang, baseUrl: '',
   });
+  const vitalsPanel = createVitalsPanel({
+    root: deck.view('vitals', { labelKey: 'deck.tab.vitals', titleKey: 'vitals.title', icon: 'vitals' }),
+    hud, getLang, baseUrl: '',
+  });
   const statusPanel = createStatusPanel({
     root: deck.view('status', { labelKey: 'deck.tab.status', titleKey: 'status.title', icon: 'status' }),
     hud, getLang, baseUrl: '',
   });
 
-  const allPanels = [brainPanel, docsPanel, grantsPanel, auditPanel, statusPanel];
+  const allPanels = [brainPanel, docsPanel, grantsPanel, auditPanel, vitalsPanel, statusPanel];
   deck.retranslate();
   deck.restore();
 
@@ -173,6 +178,10 @@ async function main() {
     deck.setBadge('brain', count);
     deck.setBadge('documents', summary.documents || 0);
   });
+
+  // How many readings sit outside a range A.R.S has a source for. A count, not a
+  // verdict — the tab says "look", the panel says whose range and nothing more.
+  setInterval(() => deck.setBadge('vitals', vitalsPanel.outsideCount()), 4000);
 
   let auditCount = 0;
 
@@ -598,12 +607,14 @@ async function main() {
     if (!navigator.onLine) {
       setBanner('network', { kind: 'offline', text: t('conn.network_offline', getLang()) });
       docsPanel.setOffline(true);
+      vitalsPanel.setOffline(true);
       // Stop polling /api/knowledge rather than logging a failure every few
       // seconds; the graph on screen stays, it just cannot grow.
       brainPanel.setOffline(true);
     } else {
       setBanner('network', null);
       docsPanel.setOffline(false);
+      vitalsPanel.setOffline(false);
       brainPanel.setOffline(false);
       brainPanel.refresh();
     }

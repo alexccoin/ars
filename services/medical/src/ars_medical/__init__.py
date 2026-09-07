@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from .config import MedicalConfig
 from .ranges import DEFAULT_REFERENCE_RANGES
+from .retention import RetentionReport, RetentionSweeper
 from .store import Aggregate, ImplausibleReadingError, IngestResult, SqliteMedicalStore, Trend
 
 __all__ = [
@@ -21,6 +22,8 @@ __all__ = [
     "ImplausibleReadingError",
     "IngestResult",
     "MedicalConfig",
+    "RetentionReport",
+    "RetentionSweeper",
     "SqliteMedicalStore",
     "Trend",
 ]

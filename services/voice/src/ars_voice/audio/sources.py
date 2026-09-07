@@ -132,6 +132,55 @@ class QueueFrameSource:
             yield frame
 
 
+class CaptureQueue:
+    """The hand-off from the audio callback thread to the event loop.
+
+    Its own class, and not a closure inside `MicrophoneSource.frames`, for one reason: it
+    is the piece that decides what happens when the pipeline cannot keep up, and that
+    decision has to be testable on a machine with no microphone — which is CI, and was also
+    every attempt to understand why five and a half seconds of a question went missing.
+
+    Two rules:
+
+    * Sequence numbers are assigned at *capture*, before the queue, so a block that does not
+      fit still consumes its numbers. A drop then leaves a hole, and a hole is something
+      every gap detector downstream already knows how to report. They used to be assigned on
+      the way out, which numbered dropped audio out of existence: the pipeline saw 44, 45,
+      46 and could not tell that half a second of speech had been thrown away in between.
+    * When the queue is full the *oldest* block goes, not the newest, and the loss is
+      counted. A live microphone is worth more current than complete. There is no useful
+      backpressure to apply: this runs on PortAudio's callback thread, where blocking does
+      not slow the world down, it corrupts the capture.
+    """
+
+    def __init__(self, maxsize: int = 100) -> None:
+        self._queue: asyncio.Queue[tuple[int, bytes]] = asyncio.Queue(maxsize=maxsize)
+        self._offered = 0
+        self.dropped_frames = 0
+
+    def offer(self, pcm: bytes) -> None:
+        """Called from the capture thread (via `call_soon_threadsafe`). Never blocks."""
+        start = self._offered
+        self._offered += len(pcm) // BYTES_PER_FRAME
+        try:
+            self._queue.put_nowait((start, pcm))
+        except asyncio.QueueFull:
+            with contextlib.suppress(asyncio.QueueEmpty):
+                _, stale = self._queue.get_nowait()
+                self.dropped_frames += len(stale) // BYTES_PER_FRAME
+            with contextlib.suppress(asyncio.QueueFull):
+                self._queue.put_nowait((start, pcm))
+
+    async def frames(self) -> AsyncIterator[AudioFrame]:
+        while True:
+            seq, pcm = await self._queue.get()
+            for offset in range(0, len(pcm), BYTES_PER_FRAME):
+                chunk = pcm[offset : offset + BYTES_PER_FRAME]
+                if len(chunk) == BYTES_PER_FRAME:
+                    yield AudioFrame(seq=seq, pcm=chunk)
+                    seq += 1
+
+
 class MicrophoneSource:
     """Real capture via sounddevice. Imported lazily — `services/voice` must import on a
     machine with no audio device at all, which is exactly what CI is."""
@@ -139,6 +188,12 @@ class MicrophoneSource:
     def __init__(self, *, device: int | str | None = None, blocksize_frames: int = 1) -> None:
         self._device = device
         self._blocksize = SAMPLES_PER_FRAME * blocksize_frames
+        self._capture = CaptureQueue()
+
+    @property
+    def dropped_frames(self) -> int:
+        """Frames capture produced that the pipeline never saw. Readable while running."""
+        return self._capture.dropped_frames
 
     async def frames(self) -> AsyncIterator[AudioFrame]:
         try:
@@ -149,18 +204,13 @@ class MicrophoneSource:
             ) from exc
 
         loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100)
+        capture = self._capture
 
         def callback(indata, _frames, _time, status) -> None:  # pragma: no cover - device
             if status:
-                pass  # over/underflow is reported by the pipeline's frame-gap detector
-            loop.call_soon_threadsafe(_offer, bytes(indata))
+                pass  # over/underflow shows up as a seq hole, which the pipeline reports
+            loop.call_soon_threadsafe(capture.offer, bytes(indata))
 
-        def _offer(pcm: bytes) -> None:  # pragma: no cover - device
-            with contextlib.suppress(asyncio.QueueFull):
-                queue.put_nowait(pcm)
-
-        seq = 0
         stream = sd.RawInputStream(
             samplerate=SAMPLE_RATE_HZ,
             blocksize=self._blocksize,
@@ -170,13 +220,8 @@ class MicrophoneSource:
             callback=callback,
         )
         with stream:  # pragma: no cover - device
-            while True:
-                pcm = await queue.get()
-                for offset in range(0, len(pcm), BYTES_PER_FRAME):
-                    chunk = pcm[offset : offset + BYTES_PER_FRAME]
-                    if len(chunk) == BYTES_PER_FRAME:
-                        yield AudioFrame(seq=seq, pcm=chunk)
-                        seq += 1
+            async for frame in capture.frames():
+                yield frame
 
 
 def resample_to_protocol_rate(samples: np.ndarray, source_rate_hz: int) -> np.ndarray:

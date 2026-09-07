@@ -77,9 +77,15 @@ const DECK_CSS = `
 }
 .ars-deck__tab[aria-selected="true"]::after { transform: scaleX(1); }
 .ars-deck__tab svg { width: 15px; height: 15px; flex: none; display: block; }
+/* Six tabs in 340px. The strip's 0.14em label tracking was costing "Vitalwerte"
+   14px of pure letter-space and ellipsising it in German; the tabs themselves
+   keep the wide tracking, the labels get their own tighter value and give back
+   the trailing space the last character does not need. */
 .ars-deck__label {
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   line-height: 1.1;
+  letter-spacing: 0.05em;
+  margin-right: -0.05em;
 }
 .ars-deck__badge {
   position: absolute; top: 0; right: 3px;
@@ -134,6 +140,7 @@ const ICONS = {
   documents: '<path d="M3.5 1.5h6l3 3v9h-9z"/><path d="M9.5 1.5v3h3M5.5 7h5M5.5 9.5h5M5.5 12h3"/>',
   grants: '<path d="M7.5 1.5 2.5 3.6v4.2c0 2.7 2 4.7 5 5.7 3-1 5-3 5-5.7V3.6z"/><path d="M5.4 7.6 6.9 9.2l3-3.4"/>',
   audit: '<path d="M2 3h11M2 6h7M2 9h11M2 12h5"/><circle cx="11.4" cy="11.6" r="2.1"/>',
+  vitals: '<path d="M1.2 8h2.6l1.5-4.2L8 12.2l1.6-4.2h1.1l.9 2h2.2"/>',
   status: '<path d="M1.8 11a5.7 5.7 0 1 1 11.4 0"/><path d="M7.5 11 10.6 7"/><path d="M1.8 11h1.6M11.6 11h1.6M7.5 5.3v-1"/>',
 };
 

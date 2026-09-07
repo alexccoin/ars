@@ -15,7 +15,7 @@ sample-rate literal in this service and a test asserts it.
 | `WakewordEngine` | `OpenWakeWordEngine` | `MockWakewordEngine`, `NullWakewordEngine` | `models/wakeword` |
 | `VadEngine` | `SileroVadEngine` | `EnergyVadEngine` (adaptive, real) | `models/vad` |
 | `AsrEngine` | `MlxWhisperEngine` (large-v3-turbo, Metal) / `FasterWhisperEngine` (int8 CPU) | `MockAsrEngine` | HF cache / `models/asr` |
-| `TtsEngine` | `PiperTtsEngine` (EN + `ro_RO`) | `MockTtsEngine`, `NullTtsEngine` | `models/tts` |
+| `TtsEngine` | `PiperTtsEngine` (en/ro/de, 31 named voices) + `CharacterTtsEngine` (robot/alien, no weights) | `MockTtsEngine`, `NullTtsEngine` | `models/tts` |
 
 Vendor SDKs are imported inside methods, never at module scope: the package imports, all
 engines construct, and the whole pipeline runs with none of them installed. Select backends
@@ -96,6 +96,42 @@ scales with the length of the *first* sentence — about 0.9 ms per character on
 end-to-end first audio was 128-132 ms, over the 120 ms budget; at 90 it is ~55 ms p50 /
 82 ms p95. The cap only bites when the first sentence has no boundary inside 90 characters —
 a normal short opening sentence is still emitted whole.
+
+## Voices, and the robot and alien characters
+
+`SynthesisRequest.voice` used to be ignored: the engine knew one voice per language and
+never set Piper's `speaker_id`, so the multi-speaker models were unreachable. It is honoured
+now, and `ars_voice.tts.catalogue` is the list of names it accepts.
+
+* **31 named voices across en/ro/de**, female and male, from 16 model files - four of them
+  multi-speaker (`en_GB-vctk-medium` is 109 speakers in 77 MB). `voices(language=..., gender=...)`
+  enumerates them; `en_GB-vctk-medium#p300` reaches any speaker the roster does not name.
+  Every label and caveat exists in EN, RO and DE. `scripts/fetch_voice_models.sh voices`
+  downloads the roster (~1.1 GB, opt-in); the three defaults come with `tts`.
+* **Romanian has exactly one Piper voice in existence and it is male.** The catalogue says
+  so (`ROMANIAN_LIMITATION`, in three languages) instead of substituting English. The two
+  extra Romanian entries are `mihai` pitch- **and formant**-shifted (`formant_k`, free -
+  the backend resamples anyway); at k=1.30 that measures 155 Hz, which is a smaller man,
+  not a woman, and is labelled as such.
+* **Characters are DSP, not models**: `CharacterTtsEngine` wraps any `TtsEngine` and applies
+  `robot_ring` / `robot_dalek` / `robot_vocoder` / `alien_ring` / `alien_swarm`. Measured
+  0.08-1.01 ms per 120 ms chunk, causal, no lookahead, bit-identical at 320/640/997/1920
+  samples per chunk. Being an effect rather than a model is what makes them work in Romanian.
+  Ask for one as `robot_dalek` (over the language default) or `robot_dalek/alan`.
+* **No `high`-quality voice is in the catalogue.** Measured 262-436 ms to first audio against
+  a 120 ms budget; `test_voice_catalogue.py` asserts their absence and the budget itself.
+
+Warm, one voice per model file, median of 5 (M5 Max): **39-64 ms** to first audio, worst
+`en_US-sam-medium` 64 ms; a character over the default voice costs +0 to +2 ms.
+
+**Voices load lazily and the defaults are pinned.** 95-110 MB and ~340 ms each means
+preloading the roster would be 3 GB and ten seconds of startup; `warm_up()` loads the active
+voice per language only, everything else is loaded on first use and evicted LRU
+(`max_resident_voices`, default 5). The pin matters: without it, trying five character voices
+evicts the English default and the next ordinary turn pays a model load. The eviction policy
+also protects the voice it has just loaded - a cap equal to the number of languages otherwise
+evicted every non-default voice before it produced a sample, measured as 400 ms to first
+audio on voices that do 55 ms warm.
 
 ## The wake phrase in the transcript
 

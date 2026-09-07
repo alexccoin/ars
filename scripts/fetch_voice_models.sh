@@ -147,24 +147,59 @@ fetch_asr() {
 
 # ---------------------------------------------------------------------------- TTS
 
+fetch_piper_voice() {  # fetch_piper_voice <voice-stem>
+  local voice="$1" locale name quality family
+  # Piper's layout is <lang_family>/<lang_REGION>/<name>/<quality>/<file>.
+  locale="${voice%%-*}"                 # en_US
+  name="${voice#*-}"; name="${name%-*}" # amy
+  quality="${voice##*-}"                # medium
+  family="${locale%%_*}"                # en
+  for suffix in ".onnx" ".onnx.json"; do
+    fetch "$PIPER_BASE/$family/$locale/$name/$quality/$voice$suffix" \
+          "$MODELS_DIR/tts/$voice$suffix"
+  done
+}
+
+catalogue_models() {
+  # Ask the catalogue rather than repeating it here. A second list of voice names in bash is
+  # the "type defined twice" defect from CLAUDE.md #1, and it fails silently: the code offers
+  # a voice the fetch script never downloaded.
+  [[ -x "$VENV_PY" ]] || return 0
+  "$VENV_PY" - <<'PY' 2>/dev/null || true
+try:
+    from ars_voice.tts.catalogue import VOICES
+except Exception:
+    raise SystemExit(0)
+print("\n".join(sorted({v.model for v in VOICES})))
+PY
+}
+
 fetch_tts() {
   log "piper voices -> $MODELS_DIR/tts"
   mkdir -p "$MODELS_DIR/tts"
-  # Piper's layout is <lang_family>/<lang_REGION>/<name>/<quality>/<file>.
   for voice in "$TTS_VOICE_EN" "$TTS_VOICE_RO" "$TTS_VOICE_DE"; do
-    local locale name quality family
-    locale="${voice%%-*}"                 # en_US
-    name="${voice#*-}"; name="${name%-*}" # amy
-    quality="${voice##*-}"                # medium
-    family="${locale%%_*}"                # en
-    for suffix in ".onnx" ".onnx.json"; do
-      fetch "$PIPER_BASE/$family/$locale/$name/$quality/$voice$suffix" \
-            "$MODELS_DIR/tts/$voice$suffix"
-    done
+    fetch_piper_voice "$voice"
   done
   log "Non-English voices: $TTS_VOICE_RO, $TTS_VOICE_DE — listen to them before shipping."
   log "A multilingual assistant whose other halves sound wrong is not multilingual in any"
   log "sense the user cares about."
+  log "The named voice catalogue (female and male across en/ro/de, ~1.1 GB) is a separate"
+  log "target, because most installs only ever speak in the three defaults:"
+  echo "    scripts/fetch_voice_models.sh voices"
+}
+
+fetch_voice_catalogue() {
+  log "voice catalogue -> $MODELS_DIR/tts"
+  mkdir -p "$MODELS_DIR/tts"
+  local models
+  models="$(catalogue_models)"
+  [[ -n "$models" ]] || die "could not read the catalogue: uv pip install -e services/voice"
+  # Four of these are multi-speaker: en_GB-vctk-medium alone is 109 voices in 77 MB, which is
+  # the whole reason the roster is a ~1.1 GB download and not a 3 GB one.
+  while IFS= read -r voice; do
+    [[ -n "$voice" ]] && fetch_piper_voice "$voice"
+  done <<< "$models"
+  log "no 'high' voices are fetched on purpose: 395-436 ms to first audio, 3.3x the budget."
 }
 
 # ---------------------------------------------------------------------------- VAD
@@ -181,7 +216,7 @@ main() {
   need curl
   local targets=("$@")
   if [[ ${#targets[@]} -eq 0 ]]; then
-    targets=(wakeword vad asr tts)
+    targets=(wakeword vad asr tts)   # 'voices' is opt-in; see fetch_tts
   fi
   mkdir -p "$MODELS_DIR"
   for target in "${targets[@]}"; do
@@ -189,8 +224,9 @@ main() {
       wakeword) fetch_wakeword ;;
       asr)      fetch_asr ;;
       tts)      fetch_tts ;;
+      voices)   fetch_voice_catalogue ;;
       vad)      fetch_vad ;;
-      *)        die "unknown target '$target' (wakeword|vad|asr|tts)" ;;
+      *)        die "unknown target '$target' (wakeword|vad|asr|tts|voices)" ;;
     esac
   done
 

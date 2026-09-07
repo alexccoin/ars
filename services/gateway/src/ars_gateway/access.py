@@ -27,6 +27,7 @@ import logging
 import secrets
 import socket
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -88,11 +89,57 @@ def lan_address() -> str | None:
         return None
 
 
+def origin_is_own_page(origin: str | None, host_header: str | None) -> bool:
+    """Is this WebSocket handshake coming from A.R.S's own page?
+
+    WebSockets are not subject to the same-origin policy and trigger no preflight, so a
+    browser will happily open `ws://127.0.0.1:<port>/ws` FOR ANY PAGE THE USER HAS OPEN.
+    The handshake then arrives from 127.0.0.1 and, under a loopback-means-owner rule, is
+    treated as Alex. Any web page — an advertisement in an iframe is enough — could ask
+    A.R.S questions and read the answers: recalled memory, passages from his documents,
+    everything he has taught it. With the standing web-search grant it is a two-way
+    channel, because "search the web for <private answer>" sends that answer to a server
+    the attacker chose.
+
+    Browsers always send `Origin` on a WebSocket handshake and it cannot be forged from
+    script. A hostile page's origin is its own, never ours, so requiring the origin to
+    match the page A.R.S itself served closes it. Absent origin is allowed: that is a
+    non-browser client (a script, a native app), which is not the threat here — anything
+    running as a local process already has the filesystem.
+    """
+    if not origin:
+        return True
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    # `Host` is what the client asked for, which is exactly what its own page's origin
+    # would be. Comparing against it rather than a configured address keeps this correct
+    # for loopback, for the LAN address a paired phone uses, and for a future port.
+    return bool(host_header) and parsed.netloc == host_header
+
+
 def presented_token(request: Request) -> str | None:
     header = request.headers.get("authorization", "")
     if header.lower().startswith("bearer "):
         return header[7:].strip()
     return request.query_params.get(QUERY_PARAM) or request.cookies.get(COOKIE)
+
+
+def tokens_match(presented: str, expected: str) -> bool:
+    """Constant-time comparison that cannot be crashed by the caller.
+
+    `secrets.compare_digest` raises TypeError on non-ASCII strings, and the presented
+    token comes straight off the wire — `?t=parolă` turned a failed authentication into an
+    unhandled 500. Not a bypass, but an error path an unauthenticated caller controls, and
+    a 500 where a 401 belongs.
+    """
+    try:
+        return secrets.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
+    except (AttributeError, TypeError):
+        return False
 
 
 class DeviceTokenMiddleware(BaseHTTPMiddleware):
@@ -109,7 +156,7 @@ class DeviceTokenMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         presented = presented_token(request)
-        if presented is None or not secrets.compare_digest(presented, self._token):
+        if presented is None or not tokens_match(presented, self._token):
             log.warning("refused %s %s from %s", request.method, request.url.path,
                         request.client.host if request.client else "unknown")
             return JSONResponse(

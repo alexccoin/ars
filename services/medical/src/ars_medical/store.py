@@ -545,6 +545,40 @@ class SqliteMedicalStore:
             counter("ars_medical.findings.returned").add(len(results))
             return tuple(results)
 
+    # ----------------------------------------------------------------------- retention
+
+    async def readings_for_retention_scan(self) -> list[aiosqlite.Row]:
+        """Used by `ars_medical.retention.RetentionSweeper`. Returns identifiers and
+        timestamps only — never `value`, never `note` — because a retention decision
+        never needs to look at content, only at age and supersession state. Same
+        contract as `ars_memory.store.SqliteMemoryStore.records_for_retention_scan`."""
+        cursor = await self._conn.execute(
+            "SELECT id, measured_at_ms, superseded_by FROM vital_readings"
+        )
+        return list(await cursor.fetchall())
+
+    async def record_retention_sweep(
+        self,
+        *,
+        ran_at_ms: int,
+        superseded_purged_count: int,
+        current_capped_count: int,
+        total_deleted: int,
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO vital_retention_sweeps "
+            "(id, ran_at_ms, superseded_purged_count, current_capped_count, total_deleted) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                new_id("rsw"),
+                ran_at_ms,
+                superseded_purged_count,
+                current_capped_count,
+                total_deleted,
+            ),
+        )
+        await self._conn.commit()
+
     @staticmethod
     def _row_to_range(row: aiosqlite.Row) -> ReferenceRange:
         return ReferenceRange(

@@ -151,6 +151,9 @@ const STRINGS = {
   'deck.tab.documents': { en: 'Docs', ro: 'Docs', de: 'Docs' },
   'deck.tab.grants': { en: 'Access', ro: 'Acces', de: 'Zugriff' },
   'deck.tab.audit': { en: 'Audit', ro: 'Audit', de: 'Audit' },
+  // 'Vitalwerte' does not fit a sixth tab in a 340px strip; 'Werte' is what a
+  // German speaker calls their own readings anyway. The panel title stays full.
+  'deck.tab.vitals': { en: 'Vitals', ro: 'Vitale', de: 'Werte' },
   'deck.tab.status': { en: 'System', ro: 'Sistem', de: 'System' },
 
   // brain network
@@ -204,6 +207,181 @@ const STRINGS = {
     en: '{total} things known: {documents} documents, {passages} passages, {facts} learned answers.',
     ro: '{total} lucruri cunoscute: {documents} documente, {passages} fragmente, {facts} răspunsuri învățate.',
     de: '{total} bekannte Dinge: {documents} Dokumente, {passages} Abschnitte, {facts} gelernte Antworten.' },
+
+  // ------------------------------------------------------------------ vitals
+  // Wording here is load-bearing, not cosmetic. `packages/protocol/.../health.py`
+  // says what A.R.S is allowed to say about a body: this is your number, this is
+  // the range your reference gives, this one is outside it. Nothing on this panel
+  // may read as a judgement about the person — no diagnosis, no condition, no
+  // risk, in any of the three languages. "outside the cited range" is a fact
+  // about two numbers; "high blood pressure" would be a claim about Alex.
+  'vitals.title': { en: 'Vitals', ro: 'Semne vitale', de: 'Vitalwerte' },
+  'vitals.intro': {
+    en: 'Your own readings, kept on this machine. A.R.S can say a number sits outside a range and name whose range it is. What that means for you it cannot say — ask a clinician.',
+    ro: 'Măsurătorile tale, păstrate pe această mașină. A.R.S poate spune că un număr se află în afara unui interval și poate numi sursa acelui interval. Ce înseamnă asta pentru tine nu poate spune — întreabă un medic.',
+    de: 'Deine eigenen Messwerte, auf diesem Rechner gespeichert. A.R.S kann sagen, dass ein Wert außerhalb eines Bereichs liegt, und nennen, wessen Bereich das ist. Was das für dich bedeutet, kann es nicht sagen — frag eine Ärztin oder einen Arzt.' },
+  'vitals.window.label': { en: 'Window', ro: 'Perioadă', de: 'Zeitraum' },
+  'vitals.window.7': { en: '7 days', ro: '7 zile', de: '7 Tage' },
+  'vitals.window.30': { en: '30 days', ro: '30 de zile', de: '30 Tage' },
+  'vitals.window.90': { en: '90 days', ro: '90 de zile', de: '90 Tage' },
+  'vitals.window.7.short': { en: '7d', ro: '7z', de: '7T' },
+  'vitals.window.30.short': { en: '30d', ro: '30z', de: '30T' },
+  'vitals.window.90.short': { en: '90d', ro: '90z', de: '90T' },
+  'vitals.summary': {
+    en: '{readings} readings · {kinds} measures',
+    ro: '{readings} măsurători · {kinds} mărimi',
+    de: '{readings} Messwerte · {kinds} Messgrößen' },
+  'vitals.empty': {
+    en: 'Nothing recorded in this window. Add a reading below — a number you type is a first-class reading.',
+    ro: 'Nimic înregistrat în această perioadă. Adaugă o măsurătoare mai jos — un număr introdus de tine este o măsurătoare de rang întâi.',
+    de: 'In diesem Zeitraum ist nichts erfasst. Trag unten einen Messwert ein — ein von dir eingegebener Wert ist ein vollwertiger Messwert.' },
+  'vitals.loading': { en: 'Reading the store…', ro: 'Se citește depozitul…', de: 'Speicher wird gelesen…' },
+  'vitals.unreachable': { en: 'The gateway did not answer — nothing loaded.', ro: 'Gateway-ul nu a răspuns — nu s-a încărcat nimic.', de: 'Das Gateway hat nicht geantwortet — nichts geladen.' },
+
+  // the ten kinds the protocol defines, spelled the way a person says them
+  'vitals.kind.heart_rate': { en: 'Heart rate', ro: 'Puls', de: 'Herzfrequenz' },
+  'vitals.kind.bp_systolic': { en: 'Blood pressure · systolic', ro: 'Tensiune · sistolică', de: 'Blutdruck · systolisch' },
+  'vitals.kind.bp_diastolic': { en: 'Blood pressure · diastolic', ro: 'Tensiune · diastolică', de: 'Blutdruck · diastolisch' },
+  'vitals.kind.spo2': { en: 'Oxygen saturation', ro: 'Saturația oxigenului', de: 'Sauerstoffsättigung' },
+  'vitals.kind.body_temperature': { en: 'Body temperature', ro: 'Temperatura corpului', de: 'Körpertemperatur' },
+  'vitals.kind.blood_glucose': { en: 'Blood glucose', ro: 'Glicemie', de: 'Blutzucker' },
+  'vitals.kind.weight': { en: 'Weight', ro: 'Greutate', de: 'Gewicht' },
+  'vitals.kind.respiratory_rate': { en: 'Breathing rate', ro: 'Frecvență respiratorie', de: 'Atemfrequenz' },
+  'vitals.kind.steps': { en: 'Steps', ro: 'Pași', de: 'Schritte' },
+  'vitals.kind.sleep_minutes': { en: 'Sleep', ro: 'Somn', de: 'Schlaf' },
+
+  // Units. mmHg, %, °C, mmol/L and kg are the same symbol in all three; the
+  // word-shaped ones are not, and the store's unit string is English.
+  'vitals.unit.heart_rate': { en: 'bpm', ro: 'bpm', de: 'S/min' },
+  'vitals.unit.bp_systolic': { en: 'mmHg', ro: 'mmHg', de: 'mmHg' },
+  'vitals.unit.bp_diastolic': { en: 'mmHg', ro: 'mmHg', de: 'mmHg' },
+  'vitals.unit.spo2': { en: '%', ro: '%', de: '%' },
+  'vitals.unit.body_temperature': { en: '°C', ro: '°C', de: '°C' },
+  'vitals.unit.blood_glucose': { en: 'mmol/L', ro: 'mmol/L', de: 'mmol/L' },
+  'vitals.unit.weight': { en: 'kg', ro: 'kg', de: 'kg' },
+  'vitals.unit.respiratory_rate': { en: 'breaths/min', ro: 'resp/min', de: 'Atemzüge/min' },
+  'vitals.unit.steps': { en: 'steps', ro: 'pași', de: 'Schritte' },
+  'vitals.unit.sleep_minutes': { en: 'min', ro: 'min', de: 'min' },
+
+  // Trend is a description of the numbers, never "better" or "worse" — whether a
+  // rising number is welcome depends on which measure it is, and that is exactly
+  // the judgement this subsystem may not make.
+  'vitals.trend.rising': { en: 'rising', ro: 'în creștere', de: 'steigend' },
+  'vitals.trend.falling': { en: 'falling', ro: 'în scădere', de: 'fallend' },
+  'vitals.trend.stable': { en: 'level', ro: 'constant', de: 'gleichbleibend' },
+  'vitals.trend.unknown': { en: 'too few to say', ro: 'prea puține date', de: 'zu wenige Werte' },
+  'vitals.trend.explain': {
+    en: 'The second half of the window compared with the first. A description of the numbers, nothing more.',
+    ro: 'A doua jumătate a perioadei comparată cu prima. O descriere a numerelor, nimic mai mult.',
+    de: 'Die zweite Hälfte des Zeitraums verglichen mit der ersten. Eine Beschreibung der Zahlen, mehr nicht.' },
+
+  'vitals.latest': { en: 'Latest', ro: 'Ultima', de: 'Zuletzt' },
+  'vitals.stat.mean': { en: 'avg {v}', ro: 'medie {v}', de: 'Ø {v}' },
+  'vitals.stat.span': { en: 'low {min} · high {max}', ro: 'min. {min} · max. {max}', de: 'min. {min} · max. {max}' },
+  'vitals.stat.count': { en: '{n} readings', ro: '{n} măsurători', de: '{n} Messwerte' },
+  'vitals.stat.count_one': { en: '1 reading', ro: '1 măsurătoare', de: '1 Messwert' },
+  'vitals.band.word': { en: 'cited', ro: 'citat', de: 'zitiert' },
+
+  'vitals.today': { en: 'today', ro: 'azi', de: 'heute' },
+  'vitals.yesterday': { en: 'yesterday', ro: 'ieri', de: 'gestern' },
+
+  'vitals.outside.title': { en: 'Outside a cited range', ro: 'În afara unui interval citat', de: 'Außerhalb eines zitierten Bereichs' },
+  'vitals.outside.count': { en: '{n} of {total} readings', ro: '{n} din {total} măsurători', de: '{n} von {total} Messwerten' },
+  'vitals.outside.none': {
+    en: 'Every reading here sits inside the ranges A.R.S has a source for.',
+    ro: 'Toate măsurătorile de aici se află în intervalele pentru care A.R.S are o sursă.',
+    de: 'Alle Messwerte hier liegen innerhalb der Bereiche, für die A.R.S eine Quelle hat.' },
+  'vitals.outside.disclaimer': {
+    en: 'A comparison with a published range — not a medical interpretation.',
+    ro: 'O comparație cu un interval publicat — nu o interpretare medicală.',
+    de: 'Ein Vergleich mit einem veröffentlichten Bereich — keine medizinische Deutung.' },
+  'vitals.outside.above': { en: '{n} above {low}–{high} {unit}', ro: '{n} peste {low}–{high} {unit}', de: '{n} über {low}–{high} {unit}' },
+  'vitals.outside.below': { en: '{n} below {low}–{high} {unit}', ro: '{n} sub {low}–{high} {unit}', de: '{n} unter {low}–{high} {unit}' },
+  'vitals.outside.source': { en: 'Range published by {source}', ro: 'Interval publicat de {source}', de: 'Bereich veröffentlicht von {source}' },
+  'vitals.outside.mark.above': { en: 'above the cited range', ro: 'peste intervalul citat', de: 'über dem zitierten Bereich' },
+  'vitals.outside.mark.below': { en: 'below the cited range', ro: 'sub intervalul citat', de: 'unter dem zitierten Bereich' },
+  'vitals.outside.more': { en: 'Show all {n}', ro: 'Arată toate cele {n}', de: 'Alle {n} anzeigen' },
+  'vitals.outside.less': { en: 'Show fewer', ro: 'Arată mai puține', de: 'Weniger anzeigen' },
+
+  'vitals.rows.show': { en: 'All {n} readings', ro: 'Toate cele {n} măsurători', de: 'Alle {n} Messwerte' },
+  'vitals.rows.show_one': { en: 'The one reading', ro: 'Singura măsurătoare', de: 'Der eine Messwert' },
+  'vitals.rows.hide': { en: 'Hide readings', ro: 'Ascunde măsurătorile', de: 'Messwerte ausblenden' },
+  'vitals.source.manual': { en: 'typed in', ro: 'introdusă manual', de: 'von Hand' },
+  'vitals.source.device': { en: 'from {name}', ro: 'de la {name}', de: 'von {name}' },
+
+  'vitals.add.title': { en: 'Add a reading', ro: 'Adaugă o măsurătoare', de: 'Messwert hinzufügen' },
+  'vitals.add.hint': {
+    en: 'A number you type is not a lesser source — it is how the reading from a clinic’s machine gets in here.',
+    ro: 'Un număr introdus de tine nu este o sursă inferioară — așa ajunge aici valoarea de la aparatul din clinică.',
+    de: 'Ein von dir eingegebener Wert ist keine schlechtere Quelle — so kommt der Wert vom Gerät der Praxis hier herein.' },
+  'vitals.add.kind': { en: 'Measure', ro: 'Mărime', de: 'Messgröße' },
+  'vitals.add.value': { en: 'Value', ro: 'Valoare', de: 'Wert' },
+  'vitals.add.note': { en: 'Note (optional)', ro: 'Notă (opțional)', de: 'Notiz (optional)' },
+  'vitals.add.note_ph': { en: 'in your own words — “after the run”', ro: 'în cuvintele tale — „după alergare”', de: 'in deinen Worten — „nach dem Laufen“' },
+  'vitals.add.submit': { en: 'Record', ro: 'Înregistrează', de: 'Erfassen' },
+  'vitals.add.saving': { en: 'Recording…', ro: 'Se înregistrează…', de: 'Wird erfasst…' },
+  'vitals.add.saved': { en: 'Recorded {value} {unit}.', ro: 'S-a înregistrat {value} {unit}.', de: '{value} {unit} erfasst.' },
+  'vitals.add.saved_outside': {
+    en: 'Recorded {value} {unit} — outside the range published by {source}.',
+    ro: 'S-a înregistrat {value} {unit} — în afara intervalului publicat de {source}.',
+    de: '{value} {unit} erfasst — außerhalb des von {source} veröffentlichten Bereichs.' },
+  'vitals.add.need_value': { en: 'Enter a number.', ro: 'Introdu un număr.', de: 'Gib eine Zahl ein.' },
+  'vitals.add.refused': { en: 'The store refused it: {reason}', ro: 'Depozitul a refuzat-o: {reason}', de: 'Der Speicher hat ihn abgelehnt: {reason}' },
+  'vitals.add.failed': { en: 'Could not record it — the gateway did not answer.', ro: 'Nu s-a putut înregistra — gateway-ul nu a răspuns.', de: 'Konnte nicht erfasst werden — das Gateway hat nicht geantwortet.' },
+
+  'vitals.delete': { en: 'Delete', ro: 'Șterge', de: 'Löschen' },
+  'vitals.delete.aria': { en: 'Delete the reading {value} {unit} from {when}', ro: 'Șterge măsurătoarea {value} {unit} din {when}', de: 'Messwert {value} {unit} vom {when} löschen' },
+  'vitals.delete.ask': {
+    en: 'Delete {value} {unit} from {when}? It leaves the store for good.',
+    ro: 'Ștergi {value} {unit} din {when}? Dispare definitiv din depozit.',
+    de: '{value} {unit} vom {when} löschen? Der Wert verlässt den Speicher endgültig.' },
+  'vitals.delete.confirm': { en: 'Delete it', ro: 'Șterge-o', de: 'Ja, löschen' },
+  'vitals.delete.cancel': { en: 'Keep', ro: 'Păstrează', de: 'Behalten' },
+  'vitals.delete.done': { en: 'Deleted {value} {unit} from {when}.', ro: 'S-a șters {value} {unit} din {when}.', de: '{value} {unit} vom {when} gelöscht.' },
+  'vitals.delete.failed': { en: 'Could not delete it — it is still in the store.', ro: 'Nu s-a putut șterge — este încă în depozit.', de: 'Konnte nicht gelöscht werden — er ist noch im Speicher.' },
+
+  // A refused record and an empty record are different facts. The guard fronts all
+  // three health endpoints; 428 means "nobody has decided yet", 403 means "decided,
+  // no". Neither is "you have no readings", and showing the empty state for either
+  // would be the panel lying about why the screen is blank.
+  'vitals.blocked.title': { en: 'Permission needed', ro: 'Este nevoie de permisiune', de: 'Erlaubnis erforderlich' },
+  'vitals.blocked.title_denied': { en: 'Refused', ro: 'Refuzat', de: 'Verweigert' },
+  'vitals.blocked.lead': {
+    en: 'A.R.S has not been given permission to show your health record. This is not an empty record — it is one you have not unlocked.',
+    ro: 'A.R.S nu a primit permisiunea să îți arate dosarul de sănătate. Nu este un dosar gol — este unul pe care nu l-ai deblocat.',
+    de: 'A.R.S hat keine Erlaubnis, deine Gesundheitsakte anzuzeigen. Sie ist nicht leer — sie ist nur nicht freigegeben.' },
+  'vitals.blocked.lead_denied': {
+    en: 'A.R.S was refused access to your health record. This is not an empty record — it is one it may not read.',
+    ro: 'Accesul A.R.S la dosarul tău de sănătate a fost refuzat. Nu este un dosar gol — este unul pe care nu îl poate citi.',
+    de: 'A.R.S wurde der Zugriff auf deine Gesundheitsakte verweigert. Sie ist nicht leer — sie darf nur nicht gelesen werden.' },
+  'vitals.blocked.said': { en: 'The guard says:', ro: 'Paznicul spune:', de: 'Der Wächter sagt:' },
+  'vitals.blocked.where': {
+    en: 'Permissions live in the {tab} tab.',
+    ro: 'Permisiunile se află în fila {tab}.',
+    de: 'Berechtigungen findest du im Reiter {tab}.' },
+  'vitals.blocked.open': { en: 'Open {tab}', ro: 'Deschide {tab}', de: '{tab} öffnen' },
+  'vitals.blocked.retry': { en: 'Check again', ro: 'Verifică din nou', de: 'Erneut prüfen' },
+  'vitals.blocked.write': {
+    en: 'Not recorded — A.R.S has not been given permission to write to your health record.',
+    ro: 'Nu s-a înregistrat — A.R.S nu a primit permisiunea să scrie în dosarul tău de sănătate.',
+    de: 'Nicht erfasst — A.R.S hat keine Erlaubnis, in deine Gesundheitsakte zu schreiben.' },
+  'vitals.blocked.write_denied': {
+    en: 'Not recorded — A.R.S was refused permission to write to your health record.',
+    ro: 'Nu s-a înregistrat — permisiunea de a scrie în dosarul tău de sănătate a fost refuzată.',
+    de: 'Nicht erfasst — A.R.S wurde die Erlaubnis verweigert, in deine Gesundheitsakte zu schreiben.' },
+  'vitals.blocked.delete': {
+    en: 'Still in the store — A.R.S has not been given permission to change your health record.',
+    ro: 'Este încă în depozit — A.R.S nu a primit permisiunea să modifice dosarul tău de sănătate.',
+    de: 'Noch im Speicher — A.R.S hat keine Erlaubnis, deine Gesundheitsakte zu ändern.' },
+  'vitals.blocked.delete_denied': {
+    en: 'Still in the store — A.R.S was refused permission to change your health record.',
+    ro: 'Este încă în depozit — permisiunea de a modifica dosarul tău de sănătate a fost refuzată.',
+    de: 'Noch im Speicher — A.R.S wurde die Erlaubnis verweigert, deine Gesundheitsakte zu ändern.' },
+
+  'vitals.chart.aria': {
+    en: '{kind}: {n} readings over {days} days, between {min} and {max} {unit}, {trend}.',
+    ro: '{kind}: {n} măsurători în {days} zile, între {min} și {max} {unit}, {trend}.',
+    de: '{kind}: {n} Messwerte über {days} Tage, zwischen {min} und {max} {unit}, {trend}.' },
 
   // errors
   'error.model_unavailable': { en: 'The model is unavailable right now.', ro: 'Modelul nu este disponibil momentan.', de: 'Das Modell ist gerade nicht verfügbar.' },

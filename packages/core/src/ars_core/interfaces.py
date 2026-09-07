@@ -10,16 +10,19 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
+from typing import Annotated
 
 from ars_protocol import (
     AudioFrame,
     Capability,
     CapabilityGrant,
     ContentBlock,
+    DeviceKind,
     GuardDecision,
     GuardQuery,
     Language,
     MemoryRecord,
+    Model,
     Observation,
     Preference,
     SynthesisChunk,
@@ -29,8 +32,12 @@ from ars_protocol import (
     ToolSpec,
     Transcript,
     VadEvent,
+    VitalKind,
+    VitalReading,
     WakeEvent,
+    new_id,
 )
+from pydantic import Field
 
 
 class WakewordEngine(ABC):
@@ -183,6 +190,93 @@ class MemoryStore(ABC):
 
     @abstractmethod
     async def active_preferences(self) -> tuple[Preference, ...]: ...
+
+
+class DeviceCandidate(Model):
+    """A device seen advertising. Not yet connected, not yet trusted.
+
+    This belongs in `packages/protocol/src/ars_protocol/health.py` per CLAUDE.md rule
+    1 — it is exactly the kind of cross-service shape that rule exists for, and
+    `research/medical-devices.md` §5.3(a) says so explicitly. It is defined here
+    instead, deliberately, because `health.py` is owned by another agent for the
+    duration of this change and is off limits; this class is kept minimal (no
+    vendor/backend-specific fields, no vendor SDK types) precisely so promoting it to
+    `ars_protocol.health` later is a move, not a rewrite. Whoever next has both hands
+    free on `health.py` should do that move rather than let a second copy grow here.
+    """
+
+    id: Annotated[str, Field(default_factory=lambda: new_id("dev"))]
+    transport_id: str
+    """Opaque, backend-scoped. On macOS/CoreBluetooth this is the per-Mac CBPeripheral
+    UUID, NOT a MAC address, and it differs on every machine that scans for the same
+    physical device (research/medical-devices.md §3.4) — never persisted as a
+    physical-device identity; `ReadingSource.device_id` is."""
+    name: str | None = None
+    device_kind: DeviceKind = DeviceKind.MANUAL
+    services: tuple[str, ...] = ()
+    rssi: int | None = None
+
+
+class DeviceBackend(ABC):
+    """A source of `VitalReading`s from physical medical equipment (blood pressure
+    cuffs, pulse oximeters, heart-rate straps, ...).
+
+    Per CLAUDE.md rule 2, `bleak` (or any other vendor BLE SDK) is imported only inside
+    a class implementing this interface, never at this module's level and never by a
+    caller. Per rule 3, a caller reaches `discover`/`read` only after a
+    `GuardEngine.evaluate` ALLOW for `Capability.DEVICE_CONNECT`; the skill runtime
+    re-checks before invoking, and again before any reading resulting from `read` is
+    handed to `Capability.HEALTH_WRITE`.
+
+    Note what this interface cannot express: there is no `write`, `configure`, or
+    `set_time`. A.R.S never sends anything to a medical device — that is a safety
+    property enforced by the shape of this class, not by a reviewer noticing.
+    """
+
+    @property
+    @abstractmethod
+    def supported_kinds(self) -> frozenset[VitalKind]:
+        """Which `VitalKind`s this backend actually decodes from a real device — never
+        a kind the underlying profile theoretically permits but this backend has not
+        implemented. A backend that overstates this lies to whatever routes on it."""
+
+    @abstractmethod
+    def discover(self, *, timeout_s: float = 10.0) -> AsyncIterator[DeviceCandidate]:
+        """Advertising devices matching this backend's known service UUIDs.
+
+        Declared `def`, not `async def` — same reasoning as `LlmBackend.complete` and
+        `TranslationEngine.translate` above: an async generator function already
+        returns an `AsyncIterator` when called, so declaring the seam `async def` would
+        force every call site into `async for x in await backend.discover(...)`, the
+        double-await everyone gets wrong once.
+        """
+
+    @abstractmethod
+    def read(
+        self, candidate: DeviceCandidate, *, timeout_s: float = 120.0
+    ) -> AsyncIterator[VitalReading]:
+        """One measurement session against `candidate`. Yields readings as they arrive
+        and ends — without raising — on a normal device disconnect, session completion,
+        or timeout. `research/medical-devices.md` §3.5: several of these devices
+        deliberately drop the link right after delivering a reading, so a disconnect
+        that follows at least one yielded reading is success, not failure; a backend
+        implementation must not surface it as an exception.
+
+        The generous default timeout is deliberate, not sloppy: a blood-pressure cuff
+        takes roughly 40 seconds to inflate and settle, and on macOS the first access to
+        an authenticated characteristic blocks on a system pairing dialog a human has to
+        physically answer (§3.3).
+
+        Declared `def`, not `async def`, for the same reason as `discover`.
+        """
+
+    @property
+    @abstractmethod
+    def is_standard_profile(self) -> bool:
+        """True if this backend speaks an adopted Bluetooth SIG GATT profile rather
+        than a reverse-engineered vendor protocol. The UI must be able to say which,
+        because a reverse-engineered decode can silently change meaning after a
+        firmware update in a way a standard profile does not."""
 
 
 class SkillRuntime(ABC):

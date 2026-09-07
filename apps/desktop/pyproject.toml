@@ -10,11 +10,21 @@ dependencies = [
     "pywebview>=6.2,<7",
 ]
 
-# Build-time only (not imported at runtime, not bundled by PyInstaller into the app):
-#   pyinstaller>=6.22,<7
-#   pillow>=12,<13          (icon generation script only)
-# Installed straight into .venv with `uv pip install`, not declared as a runtime
-# dependency group, so they never end up as a hard requirement of the frozen app.
+# Build-time only: never imported at runtime, never bundled by PyInstaller into the
+# app (PyInstaller freezes by following imports reachable from the entry script — a
+# tool that builds the app is not on that graph). Kept out of `dependencies` above for
+# that reason, but still locked and workspace-tracked (not a hand `uv pip install`) so
+# `uv sync` never silently removes it from underneath a build. Install on demand with:
+#   uv sync --package ars-desktop --group build --inexact
+# (--inexact matters: without it, `--package` scopes to an *exact* sync of only
+# ars-desktop's own closure and uninstalls everything else in .venv — the voice/memory
+# backends included. `packaging/build_macos.sh` checks for both packages and fails
+# loudly, with that exact command, rather than proceeding without them.)
+[dependency-groups]
+build = [
+    "pyinstaller>=6.22,<7",
+    "pillow>=12,<13",          # icon generation only
+]
 
 [build-system]
 requires = ["hatchling"]

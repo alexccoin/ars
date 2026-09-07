@@ -22,6 +22,31 @@ class MedicalConfig(BaseSettings):
     is what makes "findings" work out of the box without a separate setup step. Set
     False only for a test that wants an empty range table to assert against."""
 
+    # --- retention (security/policies/retention-medical.md) ---
+    retention_superseded_days: int = 30
+    """A superseded reading (`superseded_by IS NOT NULL` — a correction was recorded)
+    is purged this many days after `measured_at_ms`. Deliberately as tight as the
+    matching `SENSITIVE` window in `ars_memory` (`retention_sensitive_superseded_days`,
+    security/policies/retention.md) rather than looser: once a value has been
+    corrected, what remains is an audit trail of the correction, not the fact itself,
+    and this is health data — CLAUDE.md rule 7 "applies with more force" here than
+    anywhere else in the system."""
+
+    retention_current_days: int | None = None
+    """A *live* (non-superseded) reading is purged this many days after
+    `measured_at_ms` — `None` (the default) means never, by the sweeper, on its own.
+
+    This is the one deliberate divergence from `ars_memory`'s policy, and it is a
+    decision, not an oversight: see `security/policies/retention-medical.md` for the
+    full reasoning. In short, `ars_memory`'s hard `SENSITIVE` cap exists to stop silent
+    accumulation of a fact that has gone stale, with the caller expected to
+    "re-remember" it if it is still true — a vital reading has no equivalent
+    "still true" to re-affirm; it is a historical measurement of a specific moment, and
+    the entire reason `SqliteMedicalStore.series`/`aggregate` exist is to answer "how
+    has this trended", a question a rolling deletion window actively destroys the
+    answer to. A caller (e.g. a future user preference, "delete my vitals after a
+    year") can still set this to an explicit number; the sweeper will honour it."""
+
     db_path_override: Path | None = None
     """Set this to point the store at an exact file. `db_path` is a derived property,
     so passing `db_path=` to the constructor would otherwise be silently dropped by
