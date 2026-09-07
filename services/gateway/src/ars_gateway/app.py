@@ -71,6 +71,10 @@ class Ars:
         """Built on the first press of the mic button, never at startup: the voice models
         are ~1.6 GB and a user who only types should not wait for them."""
         self.ready = False
+        self.warm = False
+        """Ready is "safe to answer"; warm is "fast to answer". They are different states
+        and the interface says which one it is in."""
+        self._warming: asyncio.Task | None = None
         self.startup_note = ""
 
     async def start(self) -> None:
@@ -124,16 +128,28 @@ class Ars:
                     note="default: reading the open web and A.R.S's own memory",
                 ))
 
-        # The embedding model loads lazily on first use, which put ~7 s of weight-loading
-        # on the first question of every run — paid by the user, on the hot path, inside a
-        # 1400 ms budget. Warming it here moves that cost to startup, where it belongs.
-        # It also warms the cheap tiers: they cannot answer anything until it is loaded.
+        # Ready means "the guard, the grants and the store are open", which is everything
+        # required to answer safely. Warming the models is NOT part of it: they take tens
+        # of seconds, and blocking on them here meant the window sat on a splash screen
+        # and then showed a diagnostic page saying A.R.S could not start — while the
+        # gateway came up healthy seconds later. A shell that gives up on a working
+        # process is worse than a slow first question.
+        self.ready = True
+        self.startup_note = "warming the models"
+        self._warming = asyncio.create_task(self._warm(), name="ars-warm")
+
+    async def _warm(self) -> None:
+        """Load the models, after the interface is already up.
+
+        Both of these are worth doing eagerly — the embedding model is ~7 s of weight
+        loading that would otherwise land on the user's first question, inside a 1400 ms
+        budget — but neither is worth making them look at a splash screen for.
+        """
         try:
             await self.memory.recall("warm", limit=1)
         except Exception:
             log.warning("embedding warm-up failed; the first question will pay for it",
                         exc_info=True)
-
         try:
             await self.backend.warm([""])
             self.startup_note = "local model warm"
@@ -143,7 +159,8 @@ class Ars:
                 "your documents and memory; start Ollama for full reasoning."
             )
             log.warning(self.startup_note)
-        self.ready = True
+        self.warm = True
+        log.info("models warm")
 
     async def listen(self, on_event: Any) -> Any:
         """Start (or reuse) the voice loop, and press the button once."""
@@ -160,6 +177,8 @@ class Ars:
         return self.voice
 
     async def stop(self) -> None:
+        if self._warming is not None and not self._warming.done():
+            self._warming.cancel()
         if self.voice is not None:
             with contextlib.suppress(Exception):
                 await self.voice.stop()
@@ -452,6 +471,7 @@ async def status() -> dict:
         ollama_up = False
     return {
         "ready": ars.ready,
+        "warm": ars.warm,
         "note": ars.startup_note,
         "model": ars.config.llm.llm_local_model,
         "backend": ars.config.llm.llm_backend,

@@ -32,7 +32,17 @@ from .window_state import DEFAULT_HEIGHT, DEFAULT_WIDTH, MIN_HEIGHT, MIN_WIDTH, 
 
 log = logging.getLogger("ars.desktop")
 
-BOOT_TIMEOUT_S = 25.0
+BOOT_TIMEOUT_S = 90.0
+"""How long to wait for the gateway before showing the diagnostic screen.
+
+Was 25 s, which was generous when the gateway opened two SQLite files and was
+comfortably wrong once it also loaded an embedding model. The window then showed "A.R.S
+could not start" over a process that started fine moments later — the worst kind of error
+message, because it is confidently false and the user has no way to tell.
+
+The gateway now reports ready before warming its models, so this is a backstop against a
+genuinely dead process rather than a race against startup work. Long, because the cost of
+waiting is a splash screen and the cost of giving up early is a lie."""
 WINDOW_TITLE = "A.R.S"
 
 
@@ -139,6 +149,14 @@ class DesktopShell:
 
     def boot_or_diagnose(self, *, rerender: bool = False) -> None:
         if not self._boot_lock.acquire(blocking=False):
+            # A boot is already in flight. Retry used to return silently here, so a user
+            # looking at a stuck window pressed the only button on it and watched nothing
+            # happen — twice, in Alex's case. Say so.
+            log.info("boot already in progress; ignoring retry")
+            if rerender and self.window is not None:
+                self.window.evaluate_js(
+                    "document.body && document.body.setAttribute('data-retrying','1')"
+                )
             return
         try:
             if self.gateway is None:

@@ -113,7 +113,17 @@ def start_gateway(*, host: str | None = None) -> GatewayHandle:
     to block until it can actually serve a request."""
     configure_environment()
     port = _free_port()
-    base_url = f"http://{host}:{port}"
+    # What it BINDS to and what the shell TALKS TO are different questions, and conflating
+    # them cost an evening: when `host` gained a None default so it could fall back to
+    # ARS_LISTEN_HOST, this line quietly produced "http://None:<port>", and the shell spent
+    # ninety seconds health-checking a hostname that does not exist while the gateway it
+    # had just started answered every request in nine milliseconds. The window sat on
+    # "starting the gateway…" and then claimed A.R.S could not start.
+    #
+    # The shell reaches its own gateway over loopback no matter what interface that
+    # gateway is exposed on, so this address is not configurable and must not become so.
+    bind = host or os.environ.get("ARS_LISTEN_HOST", "127.0.0.1")
+    base_url = f"http://127.0.0.1:{port}"
 
     box: dict[str, object] = {}
 
@@ -131,10 +141,9 @@ def start_gateway(*, host: str | None = None) -> GatewayHandle:
                 log.error("could not import ars_gateway.app: %s", box["import_error"])
                 return
 
-            # Loopback unless the user has deliberately opened it. The desktop shell's own
-            # window always reaches it over loopback either way, so opening it costs the
-            # owner nothing and is never done on their behalf.
-            bind = host or os.environ.get("ARS_LISTEN_HOST", "127.0.0.1")
+            # Loopback unless the user has deliberately opened it. Opening it costs the
+            # owner nothing — the window still connects over loopback — and is never done
+            # on their behalf.
             config = uvicorn.Config(
                 gateway_app,
                 host=bind,
