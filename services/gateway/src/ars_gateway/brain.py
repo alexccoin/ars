@@ -60,20 +60,33 @@ class Tier(IntEnum):
 
 @dataclass(frozen=True, slots=True)
 class TierConfig:
-    recall_cosine: float = 0.82
-    """Tier 0 gates on the RAW cosine, not the calibrated confidence, because it is
-    asking a different question of a different population: not "does this passage answer
-    that?" but "is this the same question again?". Measured on the real model
-    (research/benchmarks/retrieval_calibration.py, recall section):
+    recall_cosine: float = 0.88
+    recall_margin: float = 0.04
+    """Tier 0 gates on the RAW cosine and on a margin over the runner-up, because neither
+    separates on its own. Measured against a real store, after the first version of this
+    shipped and got it wrong:
 
-        the same question — identical, reworded, or in the other language : 0.842 - 0.899
-        a different question about the same topic                         : 0.773 - 0.796
+        the same question — identical, reworded, or translated : cosine 0.846 - 0.899
+        a different short question                             : cosine 0.737 - 0.850
 
-    0.82 sits in that gap. It deliberately accepts a translation — asking in Romanian
-    what was answered in English should not cost 600 ms — and rejects a neighbour, because
-    returning a stale answer to a subtly different question is the worst thing this tier
-    can do. The number happens to be close to CALIBRATION_MIDPOINT; that is a coincidence
-    of two unrelated measurements, not a shared constant."""
+    Those overlap. So does the margin, taken alone. The first calibration used 0.82 and a
+    bare cosine, fitted on long specific questions where "same" scored 0.842+ and
+    "different topic" scored 0.796 — a real gap, in that population. It does not
+    generalise: short conversational utterances live in a much tighter band, and against a
+    store containing "Q: yes" and "Q: hey there", the gate fired on nearly everything.
+    Alex asked "how are you" and was told who created A.R.S, at 100% confidence. A rent
+    question matched the cached answer to "yes" at 0.832.
+
+    0.88 with a 0.04 margin rejects every different question measured, with the highest
+    false candidate at 0.850. It also rejects three genuine recalls — including asking in
+    the other language, which the previous gate deliberately allowed. That is the trade,
+    taken knowingly: a missed cache hit costs a few seconds of GPU and produces a correct
+    answer, and a false cache hit produces a confident wrong one and stores nothing to
+    show the user why. The costs are not symmetric, so the threshold is not centred.
+
+    Two changes make the loss smaller than it looks: the document tier now bridges
+    languages at ingest, and `worth_caching` keeps greetings and acknowledgements out of
+    the store, so the attractors that caused this are not created in the first place."""
 
     document_threshold: float = 0.85
     """Alex's number. Above this, a passage from his own files is very likely the answer
@@ -228,6 +241,53 @@ def extract_answer(question: str, passage: str, *, max_chars: int = 600) -> str:
     return " ".join(window)[:max_chars]
 
 
+# --------------------------------------------------------------------- what to cache
+#
+# A cached answer is only useful if asking the question again means the same thing. "Hi",
+# "yes", "thanks" and "ok" fail that: they are turns, not questions, and their answers are
+# not facts about anything. Caching them is also actively harmful, because a short generic
+# string sits in the dense middle of the embedding space where everything is near
+# everything — "Q: yes" ended up as the nearest neighbour of "How much is the monthly
+# rent?" at 0.832, and served its answer.
+#
+# Stop words in all three languages, because the check has to work on a Romanian greeting
+# as well as an English one.
+_STOPWORDS = frozenset("""
+a an the this that these those there here is are was were be been am do does did doing
+i you he she it we they me him her us them my your his its our their of to in on at for
+with from by about into over what when where why how which who whom whose can could will
+would shall should may might must not no yes ok okay please thanks thank sorry hi hey
+hello goodbye bye good morning evening night sure yeah yep nope and or but if then than
+un o el ea noi voi eu tu ce cum cand unde cine care este sunt nu da bine multumesc merci
+salut buna ziua seara noapte pa te va imi iti isi mie tie lui ei si sau dar daca la de pe
+cu pentru din ca mai foarte prea putin mult
+der die das den dem des ein eine einen einem einer und oder aber wenn dann als dass ist
+sind war waren bin bist ich du er sie es wir ihr mich dich uns euch mir dir nicht kein
+ja nein danke bitte hallo tschuss guten morgen abend nacht was wann wo warum wie wer
+""".split())
+
+MIN_CACHEABLE_CONTENT_WORDS = 2
+"""Two words that are not stop words. One is not enough: "who created you" reduces to
+{created} and "how are you" reduces to {} — but so does "thanks", and the difference
+between them has to be visible to this function, not to a threshold downstream."""
+
+
+def worth_caching(question: str) -> bool:
+    """Whether an answer to this question is worth storing for next time.
+
+    Deliberately strict. The cost of not caching is that a repeated question costs the GPU
+    again; the cost of caching wrongly is a permanent wrong answer served at 100%
+    confidence, which is what happened.
+    """
+    words = [w for w in re.findall(r"\w+", question.lower()) if len(w) > 1]
+    content = [w for w in words if w not in _STOPWORDS]
+    if len(content) >= MIN_CACHEABLE_CONTENT_WORDS:
+        return True
+    # One content word can still be a real question if the question is not a fragment:
+    # "who created you" and "what is escrow" are worth keeping; "thanks" is not.
+    return len(content) == 1 and len(words) >= 3
+
+
 class TieredBrain:
     """Chooses how much machinery a question deserves.
 
@@ -297,8 +357,10 @@ class TieredBrain:
         runner_up = rivals[0] if rivals else 0.0
 
         # ---- tier 0: this exact question has been answered before
+        runner_up_cosine = max((c for _s, c, _r in scored[1:]), default=0.0)
         if (floor <= Tier.RECALL and top.kind is MemoryKind.FACT
                 and top_cosine >= self.config.recall_cosine
+                and top_cosine - runner_up_cosine >= self.config.recall_margin
                 and top.text.startswith("Q: ")):
             body = top.text.split("\nA: ", 1)
             if len(body) == 2:
@@ -367,6 +429,12 @@ class TieredBrain:
         if answer.tier < Tier.LOCAL or not answer.text.strip():
             return
         if not answer.can_learn:
+            return
+        if not worth_caching(question):
+            # A greeting is not a question, and its answer is not a fact. Storing it puts
+            # a short generic string into the part of the embedding space where everything
+            # is near everything, and it becomes the nearest neighbour of questions that
+            # have nothing to do with it.
             return
         await self.memory.remember(MemoryRecord(
             kind=MemoryKind.FACT,

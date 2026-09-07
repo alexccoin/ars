@@ -142,16 +142,27 @@ async def test_the_same_question_returns_the_cached_answer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_same_question_in_the_other_language_still_hits_the_cache() -> None:
-    """Rule 5, at the cheapest tier: asking in English what was answered in Romanian is
-    the same question, and should not cost 600 ms."""
+async def test_the_same_question_in_the_other_language_no_longer_hits_the_cache() -> None:
+    """This tier used to answer a translated question from cache, and deliberately so.
+    It does not any more, and that is a knowing loss rather than an oversight.
+
+    Asking in English what was answered in Romanian scores 0.846 — measured. So does
+    asking something entirely different against a store of short conversational answers:
+    "how are you" against "who created you" scored 0.850. There is no threshold between
+    them, so one of the two behaviours had to go, and the costs are not symmetric. A
+    missed cache hit spends a few seconds of GPU and produces a correct answer. A false
+    one produces a confident wrong answer and shows the user a 100% match to justify it.
+
+    The loss is smaller than it looks: documents are translated at ingest, so a question
+    about the user's own files still crosses languages at tier 1, which is where it
+    matters."""
     brain = TieredBrain(
         memory=_FakeMemory([_cached_answer_hit(COSINE_SAME_QUESTION_TRANSLATED)])
     )
-    answer = await brain.try_cheap_tiers("How much is the monthly rent?", language=Language.EN)
 
-    assert answer is not None
-    assert answer.tier is Tier.RECALL
+    assert await brain.try_cheap_tiers(
+        "How much is the monthly rent?", language=Language.EN
+    ) is None
 
 
 @pytest.mark.asyncio
@@ -261,3 +272,91 @@ async def test_two_genuinely_different_passages_still_refuse() -> None:
     ]))
 
     assert await brain.try_cheap_tiers("Cât este chiria pe lună?") is None
+
+
+# ------------------------------------------------------- the recall tier, after it broke
+
+CHATTER = [
+    "Q: hey there\nA: Hello! How can I assist you today?",
+    "Q: yes\nA: I'm here to help!",
+    "Q: who created you\nA: I was created by you, as I am a private assistant.",
+]
+
+
+def _chatter_store(cosines: list[float]) -> _FakeMemory:
+    return _FakeMemory([
+        Scored(rank=c, cosine=c, record=_memory(t, MemoryKind.FACT, label="answered"))
+        for c, t in sorted(zip(cosines, CHATTER), reverse=True)
+    ])
+
+
+@pytest.mark.asyncio
+async def test_a_different_question_does_not_get_a_cached_answer() -> None:
+    """The failure this section exists for. Alex asked "how are you" against a store
+    holding "who created you", and was told who created A.R.S — at 100% confidence, from
+    the recall tier, in 56 ms. Measured cosines: 0.850 for the wrong answer, and only
+    0.007 clear of the next candidate."""
+    brain = TieredBrain(memory=_chatter_store([0.850, 0.843, 0.841]))
+
+    assert await brain.try_cheap_tiers("how are you") is None
+
+
+@pytest.mark.asyncio
+async def test_a_high_cosine_with_no_margin_is_not_a_match() -> None:
+    """In a compressed embedding space a high absolute score means little on its own —
+    everything short is near everything short. What distinguishes a real repeat is that it
+    beats the alternatives, not that it clears a bar."""
+    brain = TieredBrain(memory=_chatter_store([0.884, 0.881, 0.879]))
+
+    assert await brain.try_cheap_tiers("how are you") is None
+
+
+@pytest.mark.asyncio
+async def test_the_same_question_asked_again_still_recalls() -> None:
+    brain = TieredBrain(memory=_chatter_store([0.885, 0.784, 0.781]))
+    answer = await brain.try_cheap_tiers("who created you")
+
+    assert answer is not None
+    assert answer.tier is Tier.RECALL
+
+
+# ------------------------------------------------------------------- what gets cached
+
+@pytest.mark.parametrize("question", [
+    "hi", "hey there", "yes", "ok", "thanks", "how are you", "bună", "danke", "tschüss",
+])
+def test_a_greeting_is_never_cached(question: str) -> None:
+    """"Q: yes" became the nearest neighbour of "How much is the monthly rent?" at 0.832
+    and served its answer. A short generic string sits in the dense middle of the space
+    where everything is near everything, so storing one poisons every question that comes
+    after it."""
+    from ars_gateway.brain import worth_caching
+
+    assert not worth_caching(question)
+
+
+@pytest.mark.parametrize("question", [
+    "who created you", "whats your name", "Cât este chiria pe lună?",
+    "What is the annual paid leave?", "wie hoch ist die Miete",
+])
+def test_a_real_question_is_cached(question: str) -> None:
+    from ars_gateway.brain import worth_caching
+
+    assert worth_caching(question)
+
+
+@pytest.mark.asyncio
+async def test_learning_skips_a_greeting_entirely() -> None:
+    from ars_gateway.brain import Answer
+
+    memory = _RecordingMemory()
+    brain = TieredBrain(memory=memory)
+
+    await brain.learn_answer("hi", Answer(text="Hello! How can I help?", tier=Tier.LOCAL))
+    await brain.learn_answer(
+        "What is the annual paid leave?",
+        Answer(text="25 working days.", tier=Tier.LOCAL),
+    )
+
+    assert len(memory.remembered) == 1
+    assert memory.remembered[0].text.startswith("Q: What is the annual paid leave?")
