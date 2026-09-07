@@ -4,6 +4,10 @@ Nothing in this package imports from a service. If a type is needed by two compo
 it lives here; if only one component uses it, it does not belong here.
 """
 
+from .health import (
+    PLAUSIBLE, DeviceKind, RangeFinding, ReadingSource, ReferenceRange,
+    VitalKind, VitalReading,
+)
 from .audio import (
     BYTES_PER_FRAME,
     FRAME_MS,
@@ -98,6 +102,13 @@ PROTOCOL_VERSION = "0.1.0"
 
 # Explicit, so the public surface is reviewable in a diff and linters can see it.
 __all__ = [
+    "VitalReading",
+    "VitalKind",
+    "ReferenceRange",
+    "ReadingSource",
+    "RangeFinding",
+    "DeviceKind",
+    "PLAUSIBLE",
     "BYTES_PER_FRAME",
     "DEFAULT_LANGUAGE",
     "FRAME_MS",

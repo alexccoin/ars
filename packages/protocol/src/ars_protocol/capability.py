@@ -62,6 +62,13 @@ class Capability(StrEnum):
     # Clinical knowledge — a curated corpus, not the user's own record
     MEDICAL_READ = "medical.read"
 
+    # The user's own body. Separate from MEDICAL_READ on purpose: a reference article is
+    # published, a blood-pressure series is not, and granting the first must never imply
+    # the second.
+    HEALTH_READ = "health.read"
+    HEALTH_WRITE = "health.write"
+    DEVICE_CONNECT = "device.connect"
+
     # The assistant's own state
     MEMORY_READ = "memory.read"
     MEMORY_WRITE = "memory.write"
@@ -116,6 +123,13 @@ _RISK: dict[Capability, Risk] = {
     # be read. It is what a wrong answer costs. Every other HIGH capability here is graded
     # on what it exposes; this one is graded on what someone might do because of it.
     Capability.MEDICAL_READ: Risk.HIGH,
+    Capability.HEALTH_READ: Risk.HIGH,
+    # Writing a reading is CRITICAL, which looks disproportionate next to sending an email
+    # until you consider what a wrong number does: it is not read once and discarded, it
+    # joins a series, moves an average, and is still there months later when someone makes
+    # a decision from a trend. An email can be apologised for.
+    Capability.HEALTH_WRITE: Risk.CRITICAL,
+    Capability.DEVICE_CONNECT: Risk.MEDIUM,
 }
 
 _PRIVATE: frozenset[Capability] = frozenset({
@@ -126,9 +140,14 @@ _PRIVATE: frozenset[Capability] = frozenset({
     # medical assistant is among the most sensitive things they will ever type, and a
     # capability that is not private never asks before it is used.
     Capability.MEDICAL_READ,
+    Capability.HEALTH_READ, Capability.HEALTH_WRITE,
 })
 
 _EFFECTFUL: frozenset[Capability] = frozenset({
+    # Writing to the health record and connecting to a device both change something
+    # outside A.R.S — one the record a person may show a clinician, the other a physical
+    # machine attached to a body. Neither may ever be auto-retried.
+    Capability.HEALTH_WRITE, Capability.DEVICE_CONNECT,
     Capability.EMAIL_SEND, Capability.CALENDAR_WRITE, Capability.FILES_WRITE,
     Capability.GITHUB_WRITE, Capability.SHELL_EXEC, Capability.APP_CONTROL,
     Capability.MEMORY_WRITE,

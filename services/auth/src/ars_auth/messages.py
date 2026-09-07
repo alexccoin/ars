@@ -273,6 +273,10 @@ TEMPLATES: dict[Language, dict[Msg, str]] = {
 CAPABILITY_NAMES: dict[Language, dict[Capability, str]] = {
     Language.EN: {
         Capability.WEB_SEARCH: "search the web",
+        Capability.MEDICAL_READ: "look something up in your medical reference",
+        Capability.DEVICE_CONNECT: "connect to a medical device",
+        Capability.HEALTH_WRITE: "write to your health record",
+        Capability.HEALTH_READ: "read your health readings",
         Capability.WEB_FETCH: "open a web page",
         Capability.GITHUB_READ_PUBLIC: "read a public GitHub repository",
         Capability.EMAIL_READ: "read your email",
@@ -293,6 +297,10 @@ CAPABILITY_NAMES: dict[Language, dict[Capability, str]] = {
     },
     Language.RO: {
         Capability.WEB_SEARCH: "caut pe web",
+        Capability.MEDICAL_READ: "caut în referința ta medicală",
+        Capability.DEVICE_CONNECT: "mă conectez la un dispozitiv medical",
+        Capability.HEALTH_WRITE: "scriu în fișa ta de sănătate",
+        Capability.HEALTH_READ: "citesc măsurătorile tale de sănătate",
         Capability.WEB_FETCH: "deschid o pagină web",
         Capability.GITHUB_READ_PUBLIC: "citesc un depozit public de pe GitHub",
         Capability.EMAIL_READ: "îți citesc e-mailul",
@@ -313,6 +321,10 @@ CAPABILITY_NAMES: dict[Language, dict[Capability, str]] = {
     },
     Language.DE: {
         Capability.WEB_SEARCH: "im Netz suchen",
+        Capability.MEDICAL_READ: "in deiner medizinischen Referenz nachschlagen",
+        Capability.DEVICE_CONNECT: "mich mit einem medizinischen Gerät verbinden",
+        Capability.HEALTH_WRITE: "in deine Gesundheitsakte schreiben",
+        Capability.HEALTH_READ: "deine Gesundheitsmesswerte lesen",
         Capability.WEB_FETCH: "eine Webseite öffnen",
         Capability.GITHUB_READ_PUBLIC: "ein öffentliches GitHub-Repository lesen",
         Capability.EMAIL_READ: "deine E-Mails lesen",

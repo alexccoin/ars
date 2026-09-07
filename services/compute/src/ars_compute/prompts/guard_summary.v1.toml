@@ -208,3 +208,34 @@ without_resource = "caut ceva în referința ta medicală"
 [capability."medical.read".de]
 with_resource = "{resource} in deiner medizinischen Referenz nachschlagen"
 without_resource = "etwas in deiner medizinischen Referenz nachschlagen"
+
+[capability."health.read".en]
+with_resource = "look at your {resource} readings"
+without_resource = "look at your health readings"
+[capability."health.read".ro]
+with_resource = "mă uit la măsurătorile tale de {resource}"
+without_resource = "mă uit la măsurătorile tale de sănătate"
+[capability."health.read".de]
+with_resource = "deine {resource}-Messwerte ansehen"
+without_resource = "deine Gesundheitsmesswerte ansehen"
+
+[capability."health.write".en]
+with_resource = "save a {resource} reading to your health record"
+without_resource = "save a reading to your health record"
+[capability."health.write".ro]
+with_resource = "salvez o măsurătoare de {resource} în fișa ta de sănătate"
+without_resource = "salvez o măsurătoare în fișa ta de sănătate"
+[capability."health.write".de]
+with_resource = "einen {resource}-Messwert in deine Gesundheitsakte schreiben"
+without_resource = "einen Messwert in deine Gesundheitsakte schreiben"
+
+[capability."device.connect".en]
+with_resource = "connect to your {resource}"
+without_resource = "connect to a medical device"
+[capability."device.connect".ro]
+with_resource = "mă conectez la {resource}"
+without_resource = "mă conectez la un dispozitiv medical"
+[capability."device.connect".de]
+with_resource = "mich mit deinem {resource} verbinden"
+without_resource = "mich mit einem medizinischen Gerät verbinden"
+
