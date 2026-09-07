@@ -155,6 +155,23 @@ Which model built the vector index is recorded in `memory_meta` and checked on e
 open: vectors from two models are not comparable, and a silently mixed index returns the
 wrong passage with high confidence. On a mismatch the store re-embeds.
 
+## Seeing what it knows
+
+A private assistant that learns from your files is asking for a lot of trust, and "what
+does it actually know about me" should be answerable by looking rather than by opening a
+database. `/api/knowledge` returns the store as a graph — documents, the passages they
+were cut into, the translations derived from those passages, and the answers A.R.S has
+learned — and the console draws it, growing as things arrive rather than redrawing.
+
+A translation is an edge, not a second document, because that is what it is: the same
+passage wearing another language. Language is drawn as a collar around each node, at a
+different angle per language as well as a different hue, so a translated triplet is
+distinguishable without relying on colour vision.
+
+The side column is a deck — brain, documents, permissions, audit, status — rather than one
+scrolling stack, and the network expands to the full window, because 340 pixels is not
+enough room to read what a machine knows about you.
+
 ## Trust boundaries
 
 | Boundary | Crossing | Enforcement |

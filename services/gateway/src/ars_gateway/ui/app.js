@@ -587,6 +587,9 @@ async function main() {
     dragDepth = 0;
     dropzone.hidden = true;
     for (const file of ev.dataTransfer.files) docsPanel.ingest(file);
+    // The gateway does not announce a learned document on the socket, so the
+    // network would otherwise wait for its next poll. Nudge it instead.
+    for (const delay of [1200, 3000, 6000]) setTimeout(() => brainPanel.refresh(), delay);
   });
 
   // ------------------------------------------------------------------------- network
@@ -595,9 +598,13 @@ async function main() {
     if (!navigator.onLine) {
       setBanner('network', { kind: 'offline', text: t('conn.network_offline', getLang()) });
       docsPanel.setOffline(true);
+      // Stop polling /api/knowledge rather than logging a failure every few
+      // seconds; the graph on screen stays, it just cannot grow.
+      brainPanel.setOffline(true);
     } else {
       setBanner('network', null);
       docsPanel.setOffline(false);
+      brainPanel.setOffline(false);
       brainPanel.refresh();
     }
   }

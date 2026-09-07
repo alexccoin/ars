@@ -192,6 +192,10 @@ const STRINGS = {
   'brain.translated_from': { en: 'translated from {lang}', ro: 'tradus din {lang}', de: 'übersetzt aus dem {lang}' },
   'brain.derived': { en: 'derived by A.R.S', ro: 'derivat de A.R.S', de: 'von A.R.S abgeleitet' },
   'brain.original': { en: 'as you gave it', ro: 'așa cum l-ai dat', de: 'so wie du es gegeben hast' },
+  'brain.fact_origin': {
+    en: 'A.R.S worked this out and kept it, so the same question costs nothing next time',
+    ro: 'A.R.S a dedus asta și a păstrat-o, ca aceeași întrebare să nu mai coste nimic data viitoare',
+    de: 'A.R.S hat das hergeleitet und behalten, damit dieselbe Frage beim nächsten Mal nichts kostet' },
   'brain.links': { en: 'Connections', ro: 'Conexiuni', de: 'Verbindungen' },
   'brain.language': { en: 'Language', ro: 'Limbă', de: 'Sprache' },
   'brain.isolate': { en: 'Isolate {name}', ro: 'Izolează {name}', de: '{name} isolieren' },

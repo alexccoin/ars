@@ -195,8 +195,13 @@ export function createDeck({ root, getLang }) {
   const entries = new Map(); // id -> { tab, view, labelEl, badgeEl, labelKey, titleKey, badge }
   const listeners = [];
   let activeId = null;
+  // Read the remembered tab *before* anything is registered. The first view to
+  // register is shown provisionally so the deck is never blank, and that
+  // provisional choice must not overwrite what the user last picked.
+  let saved = null;
+  try { saved = localStorage.getItem(TAB_KEY); } catch { /* private mode */ }
 
-  function select(id, { focus = false } = {}) {
+  function select(id, { focus = false, persist = true } = {}) {
     if (!entries.has(id) || id === activeId) {
       if (focus && entries.has(id)) entries.get(id).tab.focus();
       return;
@@ -213,7 +218,7 @@ export function createDeck({ root, getLang }) {
         e.badgeEl.removeAttribute('data-ping');
       }
     }
-    try { localStorage.setItem(TAB_KEY, id); } catch { /* private mode */ }
+    if (persist) { try { localStorage.setItem(TAB_KEY, id); } catch { /* private mode */ } }
     if (focus) entries.get(id).tab.focus();
     for (const fn of listeners) fn(id);
   }
@@ -256,7 +261,7 @@ export function createDeck({ root, getLang }) {
     entries.set(id, { tab, view: viewEl, labelEl, badgeEl, labelKey, titleKey, badge: null });
 
     // First view registered is the default until restore() runs.
-    if (activeId === null) select(id);
+    if (activeId === null) select(id, { persist: false });
     return viewEl;
   }
 
@@ -276,8 +281,6 @@ export function createDeck({ root, getLang }) {
   }
 
   function restore() {
-    let saved = null;
-    try { saved = localStorage.getItem(TAB_KEY); } catch { /* private mode */ }
     if (saved && entries.has(saved)) select(saved);
   }
 

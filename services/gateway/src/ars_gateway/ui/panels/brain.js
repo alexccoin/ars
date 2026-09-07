@@ -351,6 +351,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
   let offline = false;
   let lastError = false;
   let onCounts = null;
+  let firstLoad = true;
 
   /* ------------------------------------------------------------- theme read */
   let C = {};
@@ -481,11 +482,20 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
         fitBtn.dataset.attention = '1';
       }
     }
+    grewLastPoll = fresh.length > 0 || removed > 0;
     if (fresh.length || removed) {
       alpha = Math.max(alpha, fresh.length ? 0.75 : 0.4);
       autoFit = autoFit || nodes.size <= 2;
       renderLegend();
-      if (fresh.length) announceGrowth(fresh);
+      // The first payload is not growth, it is everything A.R.S already knew;
+      // announcing "+22 learned" on load would be a lie about what just happened.
+      if (firstLoad) say(t('brain.a11y', getLang(), {
+        total: nodes.size,
+        documents: summary.documents || 0,
+        passages: summary.passages || 0,
+        facts: summary.facts || 0,
+      }));
+      else if (fresh.length) announceGrowth(fresh);
       if (removed) say(t('brain.forgot', getLang(), { n: removed }));
       if (onCounts) onCounts(nodes.size, summary);
       wake();
@@ -498,6 +508,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       facts: summary.facts || 0,
     }));
     if (reduceMotion.matches) settleNow();
+    firstLoad = false;
   }
 
   function announceGrowth(fresh) {
@@ -836,22 +847,26 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
        whatever is hovered first, then documents, then answers, then passages,
        and a label that cannot find a clear spot is simply not drawn. Zooming
        in reveals the rest. */
-    const passageCount = summary.passages || 0;
     ctx.textBaseline = 'middle';
+    // Two obstacle sets. Other labels are hard obstacles — two names on top of
+    // each other are two names nobody can read. Nodes are soft: a document name
+    // may sit over a passage bead if there is nowhere else, because a cluster of
+    // four is dense by the time it is interesting, and the name matters more.
     const taken = [{ x0: w - 130, y0: 0, x1: w, y1: 30 }];  // the FIT/EXPAND buttons
-    // Nodes are obstacles too: a label box that lands on a node hides the very
-    // thing it is naming.
+    const softs = [];
     for (const n of nodes.values()) {
       const nr = clamp(n.r * cam.scale, 5, 46) + 3;
-      taken.push({ x0: sx(n) - nr, y0: sy(n) - nr, x1: sx(n) + nr, y1: sy(n) + nr });
+      softs.push({ x0: sx(n) - nr, y0: sy(n) - nr, x1: sx(n) + nr, y1: sy(n) + nr });
     }
-    const free = (r) => !taken.some((o) => r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0);
+    const hits = (r, list) => list.some((o) => r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0);
 
     const candidates = [];
     for (const n of nodes.values()) {
       if (n.appear < 0.5) continue;
       const isFocus = n.id === focusId || n.id === selectedId;
-      const showPassage = passageCount <= 14 && cam.scale > 0.92;
+      // Passage names appear when you zoom in far enough to read them; the
+      // placement pass above prunes whatever still will not fit.
+      const showPassage = cam.scale > 0.85;
       const show = isFocus || (focusId && near.has(n.id))
         || n.kind === 'document' || n.kind === 'fact' || showPassage;
       if (!show) continue;
@@ -873,21 +888,44 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       const showLang = n.language && (isFocus || n.kind === 'fact');
       const hh = showLang ? 15 : 9;
       // below, above, right, left — first one that is clear of everything
+      const side = tw / 2 + r + 9;
       const spots = [
         [0, r + 11 + (showLang ? 3 : 0)],
         [0, -(r + 11)],
-        [tw / 2 + r + 8, 0],
-        [-(tw / 2 + r + 8), 0],
+        [side, 0],
+        [-side, 0],
+        [0, r + 27], [0, -(r + 27)],
+        [side, -(r + 13)], [-side, -(r + 13)],
+        [side, r + 13], [-side, r + 13],
       ];
       let put = null;
+      let fallback = null;
       for (const [ox, oy] of spots) {
         const lx = clamp(px + ox, tw / 2 + 4, Math.max(tw / 2 + 4, w - tw / 2 - 4));
         const ly = clamp(py + oy, hh + 2, Math.max(hh + 2, h - hh - 2));
         const rect = { x0: lx - tw / 2 - 4, y0: ly - 9, x1: lx + tw / 2 + 4, y1: ly + hh };
-        if (free(rect)) { put = { lx, ly, rect }; break; }
+        if (hits(rect, taken)) continue;
+        if (!hits(rect, softs)) { put = { lx, ly, rect }; break; }
+        if (!fallback) fallback = { lx, ly, rect };
       }
+      if (!put && isFocus) put = fallback;
+      if (!put && n.kind === 'document') put = fallback;
+      if (!put && n.kind === 'fact') put = fallback;
       if (!put) continue;
       taken.push(put.rect);
+      // A label pushed off its default spot needs a leader, or it starts naming
+      // its neighbour instead.
+      const lead = Math.hypot(put.lx - px, put.ly - py);
+      if (lead > r + 22) {
+        const ux = (put.lx - px) / lead;
+        const uy = (put.ly - py) / lead;
+        ctx.strokeStyle = rgba(nodeColour(n), 0.45 * dim);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px + ux * (r + 3), py + uy * (r + 3));
+        ctx.lineTo(put.lx - ux * 4, put.ly - uy * 4);
+        ctx.stroke();
+      }
       ctx.fillStyle = rgba(C.bg, 0.8 * dim);
       ctx.fillRect(put.rect.x0, put.rect.y0, put.rect.x1 - put.rect.x0, put.rect.y1 - put.rect.y0);
       ctx.fillStyle = rgba(n.kind === 'document' ? C.ink : C.inkMute, (isFocus ? 1 : 0.92) * dim);
@@ -931,7 +969,13 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       }
     }
 
-    if (!reduceMotion.matches) {
+    if (reduceMotion.matches) {
+      // No easing, no drifting camera: the layout was settled in one burst by
+      // settleNow(), so the frame just snaps to it and the loop can stop.
+      if (autoFit) fitCamera();
+      cam.x = cam.tx; cam.y = cam.ty; cam.scale = cam.tscale;
+      pulses.length = 0;
+    } else {
       tickDebt = Math.min(tickDebt + dt * 60, 3);
       while (tickDebt >= 1) { step(); tickDebt -= 1; }
       if (autoFit) fitCamera();
@@ -1126,13 +1170,28 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
 
   /* ------------------------------------------------------------ selection UI */
 
-  function select(id, centre = false) {
+  function select(id, reveal = false) {
     selectedId = id;
     renderDetail();
-    if (centre && id && nodes.get(id)) {
+    if (reveal && id && nodes.get(id)) {
+      // Pan the least amount that brings the node inside a comfortable margin.
+      // Dead-centring it threw the rest of the network off the bottom of the
+      // canvas, which is the opposite of showing someone what A.R.S knows.
       const n = nodes.get(id);
-      autoFit = false;
-      cam.tx = n.x; cam.ty = n.y;
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      const m = 70;
+      const px = sx(n);
+      const py = sy(n);
+      let dx = 0;
+      let dy = 0;
+      if (px < m) dx = px - m; else if (px > cw - m) dx = px - (cw - m);
+      if (py < m) dy = py - m; else if (py > ch - m) dy = py - (ch - m);
+      if (dx || dy) {
+        autoFit = false;
+        cam.tx += dx / cam.scale;
+        cam.ty += dy / cam.scale;
+      }
     }
     wake();
   }
@@ -1169,7 +1228,10 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       const from = nodes.get(origin.id).language;
       parts.push(t('brain.translated_from', getLang(), { lang: LANG_LABEL[from] || from || '?' }));
     }
-    parts.push(n.derived ? t('brain.derived', getLang()) : t('brain.original', getLang()));
+    // A fact is neither "as you gave it" nor a translation — it is something
+    // A.R.S concluded. Saying so is the whole point of showing it at all.
+    if (n.kind === 'fact') parts.push(t('brain.fact_origin', getLang()));
+    else parts.push(n.derived ? t('brain.derived', getLang()) : t('brain.original', getLang()));
     detail.append(el('p', 'ars-brain__detail-meta', { text: parts.join(' · ') }));
 
     if (links.length) {
@@ -1240,6 +1302,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
 
   let timer = 0;
   let inflight = false;
+  let grewLastPoll = false;
 
   async function refresh() {
     if (inflight || offline) return;
@@ -1261,11 +1324,18 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
     }
   }
 
+  // Knowledge arrives in bursts — a document, then its passages, then each
+  // translation as the background job finishes one. So the poll speeds up while
+  // the graph is still growing and falls back to idle when it stops.
   function startPolling() {
     stopPolling();
-    timer = setInterval(() => { if (!document.hidden) refresh(); }, pollMs);
+    const tick = async () => {
+      if (!document.hidden) await refresh();
+      timer = setTimeout(tick, grewLastPoll ? 1500 : pollMs);
+    };
+    timer = setTimeout(tick, pollMs);
   }
-  function stopPolling() { if (timer) clearInterval(timer); timer = 0; }
+  function stopPolling() { if (timer) clearTimeout(timer); timer = 0; }
 
   /* ------------------------------------------------------- visibility hooks */
 
