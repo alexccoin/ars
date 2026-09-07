@@ -37,14 +37,21 @@ import { t, LANG_LABEL } from './i18n.js';
 
 const POLL_MS = 4000;
 
-/* ---- layout constants (world units) ---------------------------------- */
-const LINK_CONTAINS = 86;
-const LINK_TRANSLATION = 52;
-const CHARGE = 2400;
-const ALPHA_DECAY = 0.0165;
-const ALPHA_MIN = 0.006;
-const VELOCITY_DECAY = 0.45;
-const GRID_CELL = 120;
+/* ---- layout constants (world units) ----------------------------------
+   Velocity-Verlet would be overkill; this is the d3-force integration —
+   forces accumulate into a per-tick velocity, position takes the velocity
+   whole, and `alpha` cools the whole system to a stop. Ticks are fixed at
+   1/60 and caught up from the frame clock, so the layout settles identically
+   on a 60 Hz and a 120 Hz display. */
+const LINK_CONTAINS = 92;
+const LINK_TRANSLATION = 54;
+const LINK_K_CONTAINS = 0.55;
+const LINK_K_TRANSLATION = 0.85;
+const CHARGE = 430;
+const ALPHA_DECAY = 0.021;
+const ALPHA_MIN = 0.004;
+const VELOCITY_DECAY = 0.6;   /* velocity kept per tick */
+const GRID_CELL = 150;
 
 const KIND_ORDER = { document: 0, passage: 1, fact: 2 };
 const LANG_ANGLE = { en: -Math.PI / 2, ro: Math.PI / 6, de: (5 * Math.PI) / 6 };
@@ -101,7 +108,10 @@ const rgba = (c, a) => `rgba(${c[0]|0}, ${c[1]|0}, ${c[2]|0}, ${a})`;
 /* ---- styles ----------------------------------------------------------- */
 
 const BRAIN_CSS = `
-.ars-brain .hud-panel__body {
+/* Three classes deep on purpose: entity/hud.js caps a panel body at 42vh, and
+   a two-class selector loses that tie no matter what order the two stylesheets
+   land in. The network is the one panel that must own its height. */
+.hud-panel.ars-brain .hud-panel__body {
   max-height: none;
   min-height: 0;
   flex: 1 1 auto;
@@ -153,6 +163,16 @@ const BRAIN_CSS = `
               border-color var(--ars-dur-fast) var(--ars-ease-mech);
 }
 .ars-brain__btn:hover { color: var(--ars-text-accent); border-color: var(--ars-border-strong); }
+/* Something new landed off screen while you were looking elsewhere. */
+.ars-brain__btn[data-attention="1"] {
+  color: var(--ars-text-accent);
+  border-color: var(--ars-border-accent);
+  box-shadow: var(--ars-glow-sm);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ars-brain__btn[data-attention="1"] { animation: ars-brain-attention 1.6s var(--ars-ease-out) infinite; }
+}
+@keyframes ars-brain-attention { 50% { box-shadow: var(--ars-glow-md); } }
 
 .ars-brain__legend { display: flex; flex-wrap: wrap; gap: var(--ars-space-1); flex: none; }
 .ars-brain__chip {
@@ -181,7 +201,7 @@ const BRAIN_CSS = `
 .ars-brain__chip--passage .ars-brain__chip-mark { color: var(--ars-teal); border-radius: var(--ars-radius-pill); }
 .ars-brain__chip--fact .ars-brain__chip-mark { color: var(--ars-violet); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
 .ars-brain__chip--lang .ars-brain__chip-mark { border-radius: var(--ars-radius-pill); background: none; box-shadow: inset 0 0 0 2px currentColor; }
-.ars-brain__chip--en .ars-brain__chip-mark { color: var(--ars-ice); }
+.ars-brain__chip--en .ars-brain__chip-mark { color: var(--ars-cyan-300); }
 .ars-brain__chip--ro .ars-brain__chip-mark { color: var(--ars-amber); }
 .ars-brain__chip--de .ars-brain__chip-mark { color: var(--ars-ink); }
 .ars-brain__chip-n {
@@ -212,7 +232,7 @@ const BRAIN_CSS = `
   padding: 0 4px; border-radius: var(--ars-radius-xs);
   color: var(--ars-text-on-accent); background: var(--ars-text-muted);
 }
-.ars-brain__detail-lang[data-lang="en"] { background: var(--ars-ice); }
+.ars-brain__detail-lang[data-lang="en"] { background: var(--ars-cyan-300); }
 .ars-brain__detail-lang[data-lang="ro"] { background: var(--ars-amber); }
 .ars-brain__detail-lang[data-lang="de"] { background: var(--ars-ink); }
 .ars-brain__detail-text {
@@ -248,7 +268,7 @@ const BRAIN_CSS = `
   flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
   box-shadow: var(--ars-shadow-4);
 }
-.ars-brain-overlay > .hud-panel .hud-panel__body { flex: 1 1 auto; min-height: 0; }
+.ars-brain-overlay > .hud-panel.ars-brain .hud-panel__body { flex: 1 1 auto; min-height: 0; }
 .ars-brain-overlay .ars-brain__detail { min-height: 0; }
 `;
 
@@ -343,7 +363,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       document: tok('--ars-cyan-400', [94, 230, 255]),
       passage: tok('--ars-teal', [63, 220, 160]),
       fact: tok('--ars-violet', [176, 140, 255]),
-      en: tok('--ars-ice', [159, 238, 255]),
+      en: tok('--ars-cyan-300', [134, 237, 255]),
       ro: tok('--ars-amber', [255, 178, 63]),
       de: tok('--ars-ink', [221, 235, 244]),
       line: tok('--ars-line', [36, 56, 74]),
@@ -386,9 +406,9 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
   /* -------------------------------------------------------------- ingestion */
 
   function radiusFor(n) {
-    if (n.kind === 'document') return 13 + Math.min(10, Math.log2((n.weight || 1) + 1) * 3.5);
-    if (n.kind === 'fact') return 9;
-    return 7;
+    if (n.kind === 'document') return 15 + Math.min(10, Math.log2((n.weight || 1) + 1) * 3.5);
+    if (n.kind === 'fact') return 10;
+    return 8;
   }
 
   /** Merge a /api/knowledge payload. Only the difference is applied — existing
@@ -452,6 +472,15 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
 
     summary = data.summary || summary;
 
+    if (fresh.length && !autoFit) {
+      // The camera belongs to whoever last touched it, so growth off screen
+      // does not yank the view — it lights the FIT button instead.
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      if (fresh.some((n) => sx(n) < 0 || sy(n) < 0 || sx(n) > cw || sy(n) > ch)) {
+        fitBtn.dataset.attention = '1';
+      }
+    }
     if (fresh.length || removed) {
       alpha = Math.max(alpha, fresh.length ? 0.75 : 0.4);
       autoFit = autoFit || nodes.size <= 2;
@@ -487,11 +516,10 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
 
   /* ----------------------------------------------------------------- forces */
 
-  function step(dt) {
+  function step() {
     if (nodes.size === 0) return;
-    alpha += (0 - alpha) * ALPHA_DECAY * (dt * 60);
-    if (alpha < ALPHA_MIN) alpha = 0;
-    if (alpha === 0) return;
+    alpha += (0 - alpha) * ALPHA_DECAY;
+    if (alpha < ALPHA_MIN) { alpha = 0; return; }
 
     const list = [...nodes.values()];
 
@@ -506,6 +534,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       if (!cell) { cell = []; grid.set(key, cell); }
       cell.push(n);
     }
+    const reach2 = (GRID_CELL * 1.5) * (GRID_CELL * 1.5);
     for (const n of list) {
       const cx = Math.floor(n.x / GRID_CELL);
       const cy = Math.floor(n.y / GRID_CELL);
@@ -518,17 +547,17 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
             let dx = n.x - m.x;
             let dy = n.y - m.y;
             let d2 = dx * dx + dy * dy;
-            if (d2 > GRID_CELL * GRID_CELL * 2.25) continue;
-            if (d2 < 1e-4) { dx = (Math.random() - 0.5) * 0.6; dy = (Math.random() - 0.5) * 0.6; d2 = dx * dx + dy * dy + 1e-4; }
+            if (d2 > reach2) continue;
+            if (d2 < 1e-4) { dx = (Math.random() - 0.5) * 0.8; dy = (Math.random() - 0.5) * 0.8; d2 = dx * dx + dy * dy + 1e-4; }
+            const w = (CHARGE * alpha) / d2;
+            n.vx += dx * w;
+            n.vy += dy * w;
             const d = Math.sqrt(d2);
-            const f = (CHARGE * alpha) / d2;
-            n.vx += (dx / d) * f * dt;
-            n.vy += (dy / d) * f * dt;
-            const minD = n.r + m.r + 8;
+            const minD = n.r + m.r + 14;
             if (d < minD) {
-              const push = ((minD - d) / minD) * 40 * dt;
-              n.vx += (dx / d) * push;
-              n.vy += (dy / d) * push;
+              const push = ((minD - d) / d) * 0.5;
+              n.vx += dx * push;
+              n.vy += dy * push;
             }
           }
         }
@@ -541,32 +570,31 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       const b = nodes.get(e.to);
       if (!a || !b) continue;
       const rest = e.kind === 'translation' ? LINK_TRANSLATION : LINK_CONTAINS;
-      const k = e.kind === 'translation' ? 3.4 : 2.2;
+      const k = e.kind === 'translation' ? LINK_K_TRANSLATION : LINK_K_CONTAINS;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const d = Math.hypot(dx, dy) || 1e-4;
-      const f = ((d - rest) / d) * k * alpha * dt;
-      a.vx += dx * f; a.vy += dy * f;
-      b.vx -= dx * f; b.vy -= dy * f;
+      const l = ((d - rest) / d) * alpha * k * 0.5;
+      a.vx += dx * l; a.vy += dy * l;
+      b.vx -= dx * l; b.vy -= dy * l;
     }
 
     // Gravity. Documents are the spine and are held near the middle; facts are
     // answers A.R.S worked out on its own, so they are allowed to float.
     for (const n of list) {
-      const g = n.kind === 'document' ? 1.5 : n.kind === 'fact' ? 0.28 : 0.75;
-      n.vx -= n.x * g * alpha * dt;
-      n.vy -= n.y * g * alpha * dt;
+      const g = n.kind === 'document' ? 0.04 : n.kind === 'fact' ? 0.008 : 0.022;
+      n.vx -= n.x * g * alpha;
+      n.vy -= n.y * g * alpha;
     }
 
-    const decay = Math.pow(VELOCITY_DECAY, dt * 60);
     for (const n of list) {
       if (n.fixed) { n.vx = 0; n.vy = 0; continue; }
-      n.vx *= decay;
-      n.vy *= decay;
+      n.vx *= VELOCITY_DECAY;
+      n.vy *= VELOCITY_DECAY;
       const speed = Math.hypot(n.vx, n.vy);
-      if (speed > 900) { n.vx = (n.vx / speed) * 900; n.vy = (n.vy / speed) * 900; }
-      n.x += n.vx * dt;
-      n.y += n.vy * dt;
+      if (speed > 60) { n.vx = (n.vx / speed) * 60; n.vy = (n.vy / speed) * 60; }
+      n.x += n.vx;
+      n.y += n.vy;
     }
   }
 
@@ -574,7 +602,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
    *  draw the result, instead of animating it. */
   function settleNow(steps = 220) {
     alpha = 1;
-    for (let i = 0; i < steps; i++) step(1 / 60);
+    for (let i = 0; i < steps; i++) step();
     alpha = 0;
     fitCamera(true);
   }
@@ -595,8 +623,11 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
     const b = bounds();
     const w = canvas.clientWidth || 320;
     const h = canvas.clientHeight || 260;
-    const pad = 58;
-    const s = clamp(Math.min((w - pad) / Math.max(b.maxX - b.minX, 1), (h - pad) / Math.max(b.maxY - b.minY, 1)), 0.22, 1.9);
+    // Labels hang off the sides and below; fitting to node centres alone cropped
+    // every document name at the edge of a 340px column.
+    const padX = Math.min(150, w * 0.3);
+    const padY = Math.min(74, h * 0.26);
+    const s = clamp(Math.min((w - padX) / Math.max(b.maxX - b.minX, 1), (h - padY) / Math.max(b.maxY - b.minY, 1)), 0.25, 2.4);
     cam.tx = (b.minX + b.maxX) / 2;
     cam.ty = (b.minY + b.maxY) / 2;
     cam.tscale = s;
@@ -671,9 +702,9 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
 
     // faint instrument grid, anchored to the world so panning reads as motion
     if (quality >= 2) {
-      const gstep = 64 * cam.scale;
+      const gstep = 80 * cam.scale;
       if (gstep > 14) {
-        ctx.strokeStyle = rgba(C.line, 0.32);
+        ctx.strokeStyle = rgba(C.line, 0.24);
         ctx.lineWidth = 1;
         ctx.beginPath();
         const ox = ((w / 2 - cam.x * cam.scale) % gstep + gstep) % gstep;
@@ -723,7 +754,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
     if (quality >= 2) {
       ctx.globalCompositeOperation = 'lighter';
       for (const n of nodes.values()) {
-        const r = clamp(n.r * cam.scale, 3.5, 46) * n.appear;
+        const r = clamp(n.r * cam.scale, 5, 46) * n.appear;
         const sprite = halo(nodeColour(n));
         const size = r * 7;
         const flash = n.flash ? clamp(1 - (now - n.flash) / 1400, 0, 1) : 0;
@@ -752,7 +783,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
     for (const n of nodes.values()) {
       const px = sx(n);
       const py = sy(n);
-      const r = clamp(n.r * cam.scale, 3.5, 46) * n.appear;
+      const r = clamp(n.r * cam.scale, 5, 46) * n.appear;
       if (px < -80 || py < -80 || px > w + 80 || py > h + 80) continue;
       const dim = dimOf(n);
       const colour = nodeColour(n);
@@ -770,14 +801,24 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // language collar: colour AND position, so it survives a colour-blind eye
-      if (n.language && r > 4.5) {
+      // Language collar. Kind is the fill, language is the ring — and the ring
+      // also sits at a different angle per language, so the three are told
+      // apart by position as well as hue. A translated triplet reads as three
+      // beads with three different collars, which is exactly what it is.
+      if (n.language && r > 3.6) {
         const a0 = LANG_ANGLE[n.language] !== undefined ? LANG_ANGLE[n.language] : 0;
-        ctx.strokeStyle = rgba(langColour(n), 0.95 * dim);
-        ctx.lineWidth = 2.2;
+        const lc = langColour(n);
+        ctx.lineCap = 'butt';
+        ctx.strokeStyle = rgba(lc, 0.18 * dim);
+        ctx.lineWidth = Math.max(2, r * 0.34);
         ctx.beginPath();
-        ctx.arc(px, py, r + 3.4, a0 - 0.62, a0 + 0.62);
+        ctx.arc(px, py, r + Math.max(2.6, r * 0.32), 0, Math.PI * 2);
         ctx.stroke();
+        ctx.strokeStyle = rgba(lc, 0.98 * dim);
+        ctx.beginPath();
+        ctx.arc(px, py, r + Math.max(2.6, r * 0.32), a0 - 1.35, a0 + 1.35);
+        ctx.stroke();
+        ctx.lineCap = 'round';
       }
 
       if (isSelected) {
@@ -789,32 +830,73 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       }
     }
 
-    /* ---- labels ---- */
+    /* ---- labels ----
+       Placed, not just drawn. Nine passage names at 340px wide overlap into
+       mush, so labels are laid out by priority against an occupancy list:
+       whatever is hovered first, then documents, then answers, then passages,
+       and a label that cannot find a clear spot is simply not drawn. Zooming
+       in reveals the rest. */
     const passageCount = summary.passages || 0;
     ctx.textBaseline = 'middle';
+    const taken = [{ x0: w - 130, y0: 0, x1: w, y1: 30 }];  // the FIT/EXPAND buttons
+    // Nodes are obstacles too: a label box that lands on a node hides the very
+    // thing it is naming.
     for (const n of nodes.values()) {
-      const r = clamp(n.r * cam.scale, 3.5, 46) * n.appear;
-      const always = n.kind === 'document' || n.kind === 'fact'
-        || (passageCount <= 14 && cam.scale > 0.55);
-      const show = always || n.id === focusId || (focusId && near.has(n.id)) || n.id === selectedId;
-      if (!show || n.appear < 0.5) continue;
+      const nr = clamp(n.r * cam.scale, 5, 46) + 3;
+      taken.push({ x0: sx(n) - nr, y0: sy(n) - nr, x1: sx(n) + nr, y1: sy(n) + nr });
+    }
+    const free = (r) => !taken.some((o) => r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0);
+
+    const candidates = [];
+    for (const n of nodes.values()) {
+      if (n.appear < 0.5) continue;
+      const isFocus = n.id === focusId || n.id === selectedId;
+      const showPassage = passageCount <= 14 && cam.scale > 0.92;
+      const show = isFocus || (focusId && near.has(n.id))
+        || n.kind === 'document' || n.kind === 'fact' || showPassage;
+      if (!show) continue;
+      const priority = isFocus ? 0 : n.kind === 'document' ? 1 : n.kind === 'fact' ? 2 : 3;
+      candidates.push({ n, priority, isFocus });
+    }
+    candidates.sort((a, b) => a.priority - b.priority);
+
+    for (const { n, isFocus } of candidates) {
+      const r = clamp(n.r * cam.scale, 5, 46) * n.appear;
       const px = sx(n);
-      const py = sy(n) + r + 11;
-      if (px < -140 || py < -20 || px > w + 140 || py > h + 20) continue;
+      const py = sy(n);
+      if (px < -160 || py < -60 || px > w + 160 || py > h + 60) continue;
       const dim = dimOf(n);
       const size = n.kind === 'document' ? 11.5 : 10.5;
       ctx.font = `${n.kind === 'document' ? '600 ' : ''}${size}px ${FONT_UI}`;
-      const text = truncate(n.label, n.id === focusId ? 46 : 26);
+      const text = truncate(n.label, isFocus ? 44 : n.kind === 'document' ? 30 : 22);
       const tw = ctx.measureText(text).width;
-      ctx.fillStyle = rgba(C.bg, 0.78 * dim);
-      ctx.fillRect(px - tw / 2 - 3, py - 8, tw + 6, 16);
-      ctx.fillStyle = rgba(n.kind === 'document' ? C.ink : C.inkMute, (n.id === focusId ? 1 : 0.92) * dim);
+      const showLang = n.language && (isFocus || n.kind === 'fact');
+      const hh = showLang ? 15 : 9;
+      // below, above, right, left — first one that is clear of everything
+      const spots = [
+        [0, r + 11 + (showLang ? 3 : 0)],
+        [0, -(r + 11)],
+        [tw / 2 + r + 8, 0],
+        [-(tw / 2 + r + 8), 0],
+      ];
+      let put = null;
+      for (const [ox, oy] of spots) {
+        const lx = clamp(px + ox, tw / 2 + 4, Math.max(tw / 2 + 4, w - tw / 2 - 4));
+        const ly = clamp(py + oy, hh + 2, Math.max(hh + 2, h - hh - 2));
+        const rect = { x0: lx - tw / 2 - 4, y0: ly - 9, x1: lx + tw / 2 + 4, y1: ly + hh };
+        if (free(rect)) { put = { lx, ly, rect }; break; }
+      }
+      if (!put) continue;
+      taken.push(put.rect);
+      ctx.fillStyle = rgba(C.bg, 0.8 * dim);
+      ctx.fillRect(put.rect.x0, put.rect.y0, put.rect.x1 - put.rect.x0, put.rect.y1 - put.rect.y0);
+      ctx.fillStyle = rgba(n.kind === 'document' ? C.ink : C.inkMute, (isFocus ? 1 : 0.92) * dim);
       ctx.textAlign = 'center';
-      ctx.fillText(text, px, py);
-      if (n.language && (n.id === focusId || n.kind === 'fact')) {
+      ctx.fillText(text, put.lx, put.ly);
+      if (showLang) {
         ctx.font = `9px ${FONT_MONO}`;
         ctx.fillStyle = rgba(langColour(n), 0.95 * dim);
-        ctx.fillText(n.language.toUpperCase(), px, py + 12);
+        ctx.fillText(n.language.toUpperCase(), put.lx, put.ly + 12);
       }
     }
     ctx.textAlign = 'left';
@@ -829,6 +911,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
   let onScreen = true;
   let fpsAcc = 0;
   let fpsFrames = 0;
+  let tickDebt = 0;
 
   function frame(now) {
     raf = 0;
@@ -849,7 +932,8 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
     }
 
     if (!reduceMotion.matches) {
-      step(dt);
+      tickDebt = Math.min(tickDebt + dt * 60, 3);
+      while (tickDebt >= 1) { step(); tickDebt -= 1; }
       if (autoFit) fitCamera();
       cam.x = approach(cam.x, cam.tx, 0.22, dt);
       cam.y = approach(cam.y, cam.ty, 0.22, dt);
@@ -899,7 +983,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
     let best = null;
     let bestD = Infinity;
     for (const n of nodes.values()) {
-      const r = clamp(n.r * cam.scale, 3.5, 46) + 5;
+      const r = clamp(n.r * cam.scale, 5, 46) + 5;
       const d = Math.hypot(px - sx(n), py - sy(n));
       if (d < r && d < bestD) { best = n; bestD = d; }
     }
@@ -934,7 +1018,7 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
       dragging.node.x = worldX(px);
       dragging.node.y = worldY(py);
       dragging.node.vx = 0; dragging.node.vy = 0;
-      alpha = Math.max(alpha, 0.28);
+      alpha = Math.max(alpha, 0.3);
       autoFit = false;
       wake();
       return;
@@ -1009,7 +1093,12 @@ export function createBrainPanel({ root, hud, getLang, baseUrl = '', pollMs = PO
     }
   });
 
-  fitBtn.addEventListener('click', () => { autoFit = true; fitCamera(); wake(); });
+  fitBtn.addEventListener('click', () => {
+    autoFit = true;
+    fitBtn.removeAttribute('data-attention');
+    fitCamera();
+    wake();
+  });
 
   /* ------------------------------------------------------------- expansion */
 

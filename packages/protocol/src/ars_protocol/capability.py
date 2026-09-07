@@ -59,6 +59,9 @@ class Capability(StrEnum):
     SHELL_EXEC = "shell.exec"
     NETWORK_EGRESS = "network.egress"
 
+    # Clinical knowledge — a curated corpus, not the user's own record
+    MEDICAL_READ = "medical.read"
+
     # The assistant's own state
     MEMORY_READ = "memory.read"
     MEMORY_WRITE = "memory.write"
@@ -109,12 +112,20 @@ _RISK: dict[Capability, Risk] = {
     Capability.APP_CONTROL: Risk.HIGH,
     Capability.SHELL_EXEC: Risk.CRITICAL,
     Capability.NETWORK_EGRESS: Risk.MEDIUM,
+    # HIGH, not MEDIUM, and the reason is not the data — a clinical protocol is written to
+    # be read. It is what a wrong answer costs. Every other HIGH capability here is graded
+    # on what it exposes; this one is graded on what someone might do because of it.
+    Capability.MEDICAL_READ: Risk.HIGH,
 }
 
 _PRIVATE: frozenset[Capability] = frozenset({
     Capability.EMAIL_READ, Capability.EMAIL_SEARCH, Capability.CALENDAR_READ,
     Capability.CONTACTS_READ, Capability.GITHUB_READ_PRIVATE, Capability.FILES_READ,
     Capability.MEMORY_READ, Capability.APP_CONTROL,
+    # Not because the corpus is private, but because the QUESTION is: what someone asks a
+    # medical assistant is among the most sensitive things they will ever type, and a
+    # capability that is not private never asks before it is used.
+    Capability.MEDICAL_READ,
 })
 
 _EFFECTFUL: frozenset[Capability] = frozenset({

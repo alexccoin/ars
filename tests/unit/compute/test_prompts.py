@@ -132,13 +132,23 @@ def test_guard_summaries_cover_every_effectful_and_private_capability() -> None:
     assert not missing, f"no consent phrasing for: {sorted(missing)}"
 
 
-def test_every_guard_summary_exists_in_both_languages_with_both_forms() -> None:
+
+def test_every_guard_summary_exists_in_every_language_with_both_forms() -> None:
+    """A consent prompt is the one sentence that must never fall back to another language:
+    it is what the user is agreeing to.
+
+    This test used to assert `== {"en", "ro"}` — enforcing bilingual-only rather than
+    checking coverage. When German arrived, the file simply had none, and the assertion
+    that should have caught it was the assertion preventing the fix."""
+    expected = {lang.value for lang in SUPPORTED_LANGUAGES}
     for capability, entry in guard_summaries()["capability"].items():
-        assert set(entry) == {"en", "ro"}, capability
+        assert set(entry) == expected, capability
         for language, forms in entry.items():
             assert set(forms) == {"with_resource", "without_resource"}, (capability, language)
+            assert forms["with_resource"] and forms["without_resource"], capability
             assert "{resource}" in forms["with_resource"], capability
             assert "{resource}" not in forms["without_resource"], capability
+    assert set(guard_summaries()["default"]) == expected
 
 
 def test_the_diacritic_dictionary_contains_no_identity_entries() -> None:

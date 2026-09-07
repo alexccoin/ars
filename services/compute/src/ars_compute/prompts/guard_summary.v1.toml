@@ -15,6 +15,9 @@ without_resource = "use {tool}"
 [default.ro]
 with_resource = "folosesc {tool} pe {resource}"
 without_resource = "folosesc {tool}"
+[default.de]
+with_resource = "{tool} auf {resource} benutzen"
+without_resource = "{tool} benutzen"
 
 [capability."web.search".en]
 with_resource = "search the web for {resource}"
@@ -22,6 +25,9 @@ without_resource = "search the web"
 [capability."web.search".ro]
 with_resource = "caut pe web {resource}"
 without_resource = "caut pe web"
+[capability."web.search".de]
+with_resource = "im Netz nach {resource} suchen"
+without_resource = "im Netz suchen"
 
 [capability."web.fetch".en]
 with_resource = "open the page at {resource}"
@@ -29,6 +35,9 @@ without_resource = "open a web page"
 [capability."web.fetch".ro]
 with_resource = "deschid pagina {resource}"
 without_resource = "deschid o pagină web"
+[capability."web.fetch".de]
+with_resource = "die Seite {resource} öffnen"
+without_resource = "eine Webseite öffnen"
 
 [capability."email.read".en]
 with_resource = "read your email matching {resource}"
@@ -36,6 +45,9 @@ without_resource = "read your email"
 [capability."email.read".ro]
 with_resource = "citesc din mailul tău ce se potrivește cu {resource}"
 without_resource = "citesc din mailul tău"
+[capability."email.read".de]
+with_resource = "deine E-Mails zu {resource} lesen"
+without_resource = "deine E-Mails lesen"
 
 [capability."email.search".en]
 with_resource = "search your mailbox for {resource}"
@@ -43,6 +55,9 @@ without_resource = "search your mailbox"
 [capability."email.search".ro]
 with_resource = "caut în mailul tău {resource}"
 without_resource = "caut în mailul tău"
+[capability."email.search".de]
+with_resource = "dein Postfach nach {resource} durchsuchen"
+without_resource = "dein Postfach durchsuchen"
 
 [capability."email.send".en]
 with_resource = "send an email to {resource}"
@@ -50,6 +65,9 @@ without_resource = "send an email on your behalf"
 [capability."email.send".ro]
 with_resource = "trimit un e-mail către {resource}"
 without_resource = "trimit un e-mail în numele tău"
+[capability."email.send".de]
+with_resource = "eine E-Mail an {resource} senden"
+without_resource = "in deinem Namen eine E-Mail senden"
 
 [capability."files.read".en]
 with_resource = "read the file {resource}"
@@ -57,6 +75,9 @@ without_resource = "read your files"
 [capability."files.read".ro]
 with_resource = "citesc fișierul {resource}"
 without_resource = "citesc din fișierele tale"
+[capability."files.read".de]
+with_resource = "die Datei {resource} lesen"
+without_resource = "deine Dateien lesen"
 
 [capability."files.write".en]
 with_resource = "write to {resource}"
@@ -64,6 +85,9 @@ without_resource = "write a file"
 [capability."files.write".ro]
 with_resource = "scriu în {resource}"
 without_resource = "scriu un fișier"
+[capability."files.write".de]
+with_resource = "in {resource} schreiben"
+without_resource = "eine Datei schreiben"
 
 [capability."calendar.read".en]
 with_resource = "look at your calendar around {resource}"
@@ -71,6 +95,9 @@ without_resource = "look at your calendar"
 [capability."calendar.read".ro]
 with_resource = "mă uit în calendarul tău în jurul {resource}"
 without_resource = "mă uit în calendarul tău"
+[capability."calendar.read".de]
+with_resource = "in deinen Kalender um {resource} sehen"
+without_resource = "in deinen Kalender sehen"
 
 [capability."calendar.write".en]
 with_resource = "put {resource} in your calendar"
@@ -78,6 +105,9 @@ without_resource = "add something to your calendar"
 [capability."calendar.write".ro]
 with_resource = "pun {resource} în calendarul tău"
 without_resource = "adaug ceva în calendarul tău"
+[capability."calendar.write".de]
+with_resource = "{resource} in deinen Kalender eintragen"
+without_resource = "etwas in deinen Kalender eintragen"
 
 [capability."shell.exec".en]
 with_resource = "run the command {resource} on this machine"
@@ -85,6 +115,9 @@ without_resource = "run a command on this machine"
 [capability."shell.exec".ro]
 with_resource = "rulez comanda {resource} pe calculatorul ăsta"
 without_resource = "rulez o comandă pe calculatorul ăsta"
+[capability."shell.exec".de]
+with_resource = "den Befehl {resource} auf diesem Rechner ausführen"
+without_resource = "einen Befehl auf diesem Rechner ausführen"
 
 [capability."github.read_private".en]
 with_resource = "read your private repository {resource}"
@@ -92,6 +125,9 @@ without_resource = "read your private repositories"
 [capability."github.read_private".ro]
 with_resource = "citesc repository-ul tău privat {resource}"
 without_resource = "citesc din repository-urile tale private"
+[capability."github.read_private".de]
+with_resource = "dein privates Repository {resource} lesen"
+without_resource = "deine privaten Repositories lesen"
 
 [capability."memory.write".en]
 with_resource = "remember {resource}"
@@ -99,6 +135,9 @@ without_resource = "save something to memory"
 [capability."memory.write".ro]
 with_resource = "țin minte {resource}"
 without_resource = "salvez ceva în memorie"
+[capability."memory.write".de]
+with_resource = "mir {resource} merken"
+without_resource = "etwas im Gedächtnis speichern"
 
 [capability."memory.read".en]
 with_resource = "look up what I remember about {resource}"
@@ -106,6 +145,9 @@ without_resource = "look through what I remember about you"
 [capability."memory.read".ro]
 with_resource = "caut în ce îmi amintesc despre {resource}"
 without_resource = "caut prin ce îmi amintesc despre tine"
+[capability."memory.read".de]
+with_resource = "nachsehen, was ich über {resource} weiß"
+without_resource = "durchsehen, was ich über dich weiß"
 
 [capability."contacts.read".en]
 with_resource = "look up {resource} in your contacts"
@@ -113,6 +155,9 @@ without_resource = "look through your contacts"
 [capability."contacts.read".ro]
 with_resource = "caut {resource} în contactele tale"
 without_resource = "mă uit prin contactele tale"
+[capability."contacts.read".de]
+with_resource = "{resource} in deinen Kontakten nachschlagen"
+without_resource = "deine Kontakte durchsehen"
 
 [capability."app.control".en]
 with_resource = "control {resource} on this machine"
@@ -120,6 +165,9 @@ without_resource = "control an app on this machine"
 [capability."app.control".ro]
 with_resource = "controlez {resource} pe calculatorul ăsta"
 without_resource = "controlez o aplicație pe calculatorul ăsta"
+[capability."app.control".de]
+with_resource = "{resource} auf diesem Rechner steuern"
+without_resource = "eine App auf diesem Rechner steuern"
 
 [capability."github.write".en]
 with_resource = "push a change to {resource}"
@@ -127,6 +175,9 @@ without_resource = "push a change to GitHub in your name"
 [capability."github.write".ro]
 with_resource = "trimit o modificare în {resource}"
 without_resource = "trimit o modificare pe GitHub în numele tău"
+[capability."github.write".de]
+with_resource = "eine Änderung nach {resource} pushen"
+without_resource = "in deinem Namen nach GitHub pushen"
 
 [capability."network.egress".en]
 with_resource = "send data to {resource}"
@@ -134,6 +185,9 @@ without_resource = "send data out over the network"
 [capability."network.egress".ro]
 with_resource = "trimit date către {resource}"
 without_resource = "trimit date în afara calculatorului"
+[capability."network.egress".de]
+with_resource = "Daten an {resource} senden"
+without_resource = "Daten über das Netz nach außen senden"
 
 [capability."github.read_public".en]
 with_resource = "read the public repository {resource}"
@@ -141,3 +195,16 @@ without_resource = "read a public repository"
 [capability."github.read_public".ro]
 with_resource = "citesc repository-ul public {resource}"
 without_resource = "citesc un repository public"
+[capability."github.read_public".de]
+with_resource = "das öffentliche Repository {resource} lesen"
+without_resource = "ein öffentliches Repository lesen"
+
+[capability."medical.read".en]
+with_resource = "look up {resource} in your medical reference"
+without_resource = "look something up in your medical reference"
+[capability."medical.read".ro]
+with_resource = "caut {resource} în referința ta medicală"
+without_resource = "caut ceva în referința ta medicală"
+[capability."medical.read".de]
+with_resource = "{resource} in deiner medizinischen Referenz nachschlagen"
+without_resource = "etwas in deiner medizinischen Referenz nachschlagen"
