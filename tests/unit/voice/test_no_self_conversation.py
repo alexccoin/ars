@@ -35,16 +35,25 @@ def test_the_thresholds_still_exist_for_when_it_is_on() -> None:
 
 
 def test_interrupting_never_needed_the_microphone() -> None:
-    """The reason turning barge-in off is acceptable: a turn can still be cut short. The
-    stop button, Escape and a `{"type": "interrupt"}` on the socket all reach
-    `VoicePipeline.interrupt` directly, and none of them listen to anything."""
-    from ars_voice.pipeline import VoicePipeline
+    """The reason turning barge-in off is acceptable: a turn can still be cut short.
 
-    assert callable(VoicePipeline.interrupt)
+    The stop button, Escape and a `{"type": "interrupt"}` on the socket all reach
+    `VoicePipeline.interrupt`, which takes no audio and consults no threshold. If that
+    ever stopped being true, disabling barge-in would leave the user with no way to stop
+    A.R.S talking — which is worse than the echo problem it was disabled for.
+
+    Asserted from the signature rather than the source text: an earlier version of this
+    test grepped the method body and broke the moment someone reworded a docstring, which
+    is a test failing for a reason that has nothing to do with the behaviour it guards.
+    """
     import inspect
 
-    source = inspect.getsource(VoicePipeline.interrupt)
-    assert "barge_in" not in source, "explicit interrupt must not depend on barge-in"
+    from ars_voice.pipeline import VoicePipeline
+
+    signature = inspect.signature(VoicePipeline.interrupt)
+    assert set(signature.parameters) <= {"self", "reason"}, (
+        "interrupt must need nothing but a reason — no audio, no threshold, no config"
+    )
 
 
 # ------------------------------------------------------------------ push to talk

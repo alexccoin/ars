@@ -60,7 +60,7 @@ class ScriptedPipeline:
 
 async def _silence_source():
     """A microphone that works: silence is audio, and it never stops arriving."""
-    from ars_protocol import AudioFrame, BYTES_PER_FRAME
+    from ars_protocol import BYTES_PER_FRAME, AudioFrame
 
     seq = 0
     while True:

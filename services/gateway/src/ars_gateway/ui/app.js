@@ -162,6 +162,10 @@ async function main() {
   const vitalsPanel = createVitalsPanel({
     root: deck.view('vitals', { labelKey: 'deck.tab.vitals', titleKey: 'vitals.title', icon: 'vitals' }),
     hud, getLang, baseUrl: '',
+    // health.read is HIGH and health.write CRITICAL, so on a fresh machine the guard
+    // holds every call back until a grant exists. The panel says so and hands the
+    // user straight to the tab where grants are made.
+    onOpenAccess: () => { deck.select('grants'); grantsPanel.refresh(); },
   });
   const statusPanel = createStatusPanel({
     root: deck.view('status', { labelKey: 'deck.tab.status', titleKey: 'status.title', icon: 'status' }),

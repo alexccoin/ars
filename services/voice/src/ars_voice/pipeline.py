@@ -130,6 +130,11 @@ class VoicePipeline:
         self._turn_began_with_wake = False
         self._resuming = False
         """A cancellation is in flight that will reopen the microphone, not idle."""
+        self._epoch = 0
+        """Bumped every time the utterance in progress is superseded or abandoned.
+
+        `_close_utterance` awaits a decode for up to 15 seconds, and the world can move on
+        underneath it. Comparing the epoch it started with is how it finds out."""
         self._spoken_text = ""
         self._asr_seq = 0
         self._warmed = False
@@ -563,6 +568,7 @@ class VoicePipeline:
 
     async def _close_utterance(self) -> None:
         assert self._asr_channel is not None and self._final is not None
+        epoch = self._epoch
         await self._enter(AgentState.TRANSCRIBING)
         self._asr_channel.close()
         try:
@@ -577,6 +583,14 @@ class VoicePipeline:
                 )
             )
             await self._abandon_turn()
+            return
+
+        if epoch != self._epoch:
+            # A press arrived while the decode was in flight and has already opened a new
+            # utterance. TRANSCRIBING is a short state — ~150 ms — but it is not zero, and
+            # answering the abandoned question here would start a second turn on top of the
+            # live one: two `_turn_task`s, two replies, one of which nobody asked for.
+            log.info("dropping a transcript the user has already moved past")
             return
 
         transcript = self._strip_wakeword(transcript)
@@ -748,12 +762,17 @@ class VoicePipeline:
         else:
             await self._enter(AgentState.IDLE)
 
+    def _supersede(self) -> None:
+        """Whatever utterance was in flight is no longer the one being answered."""
+        self._epoch += 1
+
     async def _resume_listening(self) -> None:
         """Open a fresh utterance immediately, with the audio already in hand as pre-roll.
 
         Used after a barge-in and after an explicit press. In both cases the user is
         already talking, or about to; making them wait for a wakeword to be re-armed would
         clip the first word off the thing they interrupted for."""
+        self._supersede()
         pre_roll = self._recent.snapshot(
             self.config.barge_in.min_speech_ms + self.config.wakeword.pre_roll_ms
         )
@@ -770,6 +789,7 @@ class VoicePipeline:
     # ------------------------------------------------------------------ housekeeping
 
     async def _abandon_turn(self) -> None:
+        self._supersede()
         await self._close_asr()
         self.turn = None
         self.turn_latency = None

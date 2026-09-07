@@ -887,12 +887,19 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
     confirm.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); open(false); } });
     yes.addEventListener('click', async () => {
       yes.disabled = true; no.disabled = true;
-      const ok = await destroyReading(reading.id);
-      if (ok) {
+      const result = await destroyReading(reading.id);
+      if (result.ok) {
         say(t('vitals.delete.done', getLang(), { value: num(reading.value), unit, when: whenText }));
         await refresh();
+        return;
+      }
+      yes.disabled = false; no.disabled = false;
+      if (result.status === 428 || result.status === 403) {
+        const denied = result.status === 403;
+        say(t(denied ? 'vitals.blocked.delete_denied' : 'vitals.blocked.delete', getLang()), denied ? 'error' : 'warn');
+        if (result.detail) say(result.detail, 'warn');
+        open(false);
       } else {
-        yes.disabled = false; no.disabled = false;
         say(t('vitals.delete.failed', getLang()), 'error');
       }
     });
@@ -1128,7 +1135,7 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
     const tab = t('deck.tab.grants', getLang());
     actions.append(el('span', 'ars-vitals__blocked-where', { text: t('vitals.blocked.where', getLang(), { tab }) }));
     if (onOpenAccess) {
-      const open = el('button', 'ars-vitals__submit', { type: 'button', text: t('vitals.blocked.open', getLang(), { tab }) });
+      const open = el('button', 'ars-vitals__submit ars-vitals__blocked-open', { type: 'button', text: t('vitals.blocked.open', getLang(), { tab }) });
       open.addEventListener('click', () => onOpenAccess());
       actions.append(open);
     }
@@ -1222,9 +1229,16 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind, value, note: note || undefined }),
       });
+      if (res.status === 428 || res.status === 403) {
+        const denied = res.status === 403;
+        say(t(denied ? 'vitals.blocked.write_denied' : 'vitals.blocked.write', getLang()), denied ? 'error' : 'warn');
+        const detail = await guardDetail(res);
+        if (detail) say(detail, 'warn');   // the guard's sentence, verbatim
+        if (onOpenAccess) say(t('vitals.blocked.where', getLang(), { tab: t('deck.tab.grants', getLang()) }), 'warn');
+        return;
+      }
       if (!res.ok) {
-        let reason = `HTTP ${res.status}`;
-        try { const b = await res.json(); if (b && b.detail) reason = typeof b.detail === 'string' ? b.detail : JSON.stringify(b.detail); } catch { /* not json */ }
+        const reason = (await guardDetail(res)) || `HTTP ${res.status}`;
         say(t('vitals.add.refused', getLang(), { reason }), 'error');
         return;
       }
@@ -1251,21 +1265,26 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
 
   /* ---------------------------------------------------------------- network */
 
+  /** -> { ok } | { ok: false, status, detail } so the caller can tell "the gateway
+   *  is down" from "the guard will not allow it", which need different sentences. */
   async function destroyReading(id) {
     try {
       const res = await fetch(`${baseUrl}/api/health/readings/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      if (!res.ok) return false;
+      if (res.status === 428 || res.status === 403) {
+        return { ok: false, status: res.status, detail: await guardDetail(res) };
+      }
+      if (!res.ok) return { ok: false };
       const body = await res.json();
       // The endpoint answers {removed: <rows deleted>} today; a boolean would be a
       // reasonable thing for it to answer tomorrow. Zero rows means the reading is
       // still in the store, and the user must be told that rather than shown a row
       // vanishing from a list while the record survives on disk.
       const removed = body && body.removed;
-      if (typeof removed === 'number') return removed > 0;
-      return removed !== false;
+      if (typeof removed === 'number') return { ok: removed > 0 };
+      return { ok: removed !== false };
     } catch (err) {
       console.warn('[vitals] delete failed', err);
-      return false;
+      return { ok: false };
     }
   }
 
@@ -1276,9 +1295,21 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
   async function refresh({ animate = false } = {}) {
     if (inflight || offline) return;
     inflight = true;
+    lastFetchAt = Date.now();
     try {
       const res = await fetch(`${baseUrl}/api/health/readings?days=${days}`);
+      if (res.status === 428 || res.status === 403) {
+        // The guard fronts this endpoint. Refused is not empty: drop whatever was
+        // on screen (it is health data the user has not authorised showing) and
+        // say which of the two it is, in the guard's own words.
+        block = { status: res.status, detail: await guardDetail(res) };
+        payload = { days, series: {}, outside_range: [] };
+        loadedOnce = true;
+        renderAll();
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      block = null;
       payload = await res.json();
       loadedOnce = true;
       allowDraw = animate || !loadedOnceRendered;
@@ -1296,41 +1327,46 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
     }
   }
 
-  // Health readings arrive rarely — a cuff in the morning, a scale twice a week.
-  // A slow poll is enough, and it stops dead when this tab is not the one being
-  // looked at: nothing here is worth a request the user cannot see the result of.
-  let timer = 0;
-  const POLL_MS = 60000;
-  function tick() {
-    timer = setTimeout(async () => {
-      if (onScreen && !document.hidden) await refresh();
-      tick();
-    }, POLL_MS);
-  }
-  function stopPolling() { if (timer) clearTimeout(timer); timer = 0; }
+  // NO TIMER POLL. Every read of this record is a guarded call — HEALTH_READ is
+  // HIGH, and the guard rate-limits it (4 per turn, 64 per session) precisely to
+  // catch a client that reads private data in a loop. A background poll IS that
+  // loop: a 60s timer would spend the whole session budget on requests nobody
+  // asked for and then hand the user a 403 that reads like a refusal of them.
+  //
+  // So a read happens only when a person caused one: opening the tab, changing the
+  // window, pressing "check again", or after their own write or delete. Coming back
+  // to the tab re-reads only if what is on screen has gone stale.
+  const STALE_MS = 60000;
+  let lastFetchAt = 0;
 
   let onScreen = false;
   const io = typeof IntersectionObserver !== 'undefined'
     ? new IntersectionObserver((entries) => {
       const now = entries.some((e) => e.isIntersecting);
-      if (now && !onScreen) { onScreen = true; refresh({ animate: true }); } else onScreen = now;
+      const appeared = now && !onScreen;
+      onScreen = now;
+      // Blocked always retries on re-entry: the user has just been sent to the
+      // Access tab to make a grant, and coming back is them saying "now try again".
+      if (appeared && (block || Date.now() - lastFetchAt > STALE_MS)) refresh({ animate: true });
     }, { threshold: 0 })
     : null;
   if (io) io.observe(wrap);
 
-  function onVisibility() { if (!document.hidden && onScreen) refresh(); }
+  function onVisibility() {
+    if (!document.hidden && onScreen && (block || Date.now() - lastFetchAt > STALE_MS)) refresh();
+  }
   document.addEventListener('visibilitychange', onVisibility);
 
   refresh({ animate: true });
-  tick();
 
   const api = {
     panelRoot: panelHandle.root,
     refresh,
     setOffline(v) { offline = !!v; },
     /** For the deck badge: how many readings sit outside a cited range. */
-    outsideCount: () => (payload.outside_range || []).length,
-    stats: () => ({ renderMs: Math.round(lastRenderMs * 100) / 100, days, kinds: Object.keys(payload.series || {}).length }),
+    outsideCount: () => (block ? 0 : (payload.outside_range || []).length),
+    blocked: () => (block ? { ...block } : null),
+    stats: () => ({ renderMs: Math.round(lastRenderMs * 100) / 100, days, kinds: Object.keys(payload.series || {}).length, blocked: block && block.status }),
     retranslate() {
       if (panelHandle.setTitle) panelHandle.setTitle(t('vitals.title', getLang()));
       intro.textContent = t('vitals.intro', getLang());
@@ -1353,7 +1389,6 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
       renderAll();
     },
     destroy() {
-      stopPolling();
       if (io) io.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       panelHandle.root.remove();

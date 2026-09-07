@@ -145,6 +145,45 @@ audio keeps the keyword and `wakeword.strip_from_transcript` (on by default) rem
 *leading* match from the text, only on turns that began with a wake event — a barge-in turn
 has no wake phrase in front of it and keeps its first word.
 
+## The push-to-talk button, in every state
+
+A press goes through `VoicePipeline.request_turn()`, never straight at the wakeword engine.
+Arming the engine only does something while the pipeline is IDLE — that is the only state in
+which it is fed frames — so an arm set at any other moment is not lost, it is *deferred*
+until the current turn ends, and then opens the microphone when nobody is talking. Measured
+before the fix, on mock engines: presses during LISTENING and THINKING produced zero wake
+events and zero state changes, and the arm fired 1.95 s after the last press; through the
+gateway, behind a 14B reply, the same deferral was 13 s. From outside, a dead button.
+
+| state at press | what happens | why |
+|---|---|---|
+| IDLE / ERROR | arm the engine; fires within one 80 ms window, with the pre-roll | unchanged — one way to begin a turn |
+| LISTENING | nothing, and **no arm is left behind** | the microphone is already open; an arm here is the stale arm above |
+| TRANSCRIBING / THINKING / ACTING / SPEAKING | cancel the turn (synthesiser, compute request, task, speaker queue) and listen | the user's own hand is on the button — not an echo, not ambiguous |
+
+The last row is not barge-in and does not depend on it: barge-in stays off, because on open
+speakers A.R.S hears itself. `interrupt()` (the stop button, Escape, `{"type":"interrupt"}`)
+still cancels *to idle* — "be quiet" and "listen to me" are different intentions.
+
+`VoiceLoop.press()` logs the outcome (`armed` / `already_listening` / `interrupted`) and the
+state it was in. It used to log "press: armed" unconditionally, which was true and useless.
+
+## Silent drops, and gaps that were never drops
+
+Capture assigns sequence numbers *before* the bounded queue (`CaptureQueue`), so a block the
+queue cannot hold leaves a hole and every gap detector downstream reports it. They used to be
+assigned on the way out, which numbered dropped audio out of existence.
+
+The pipeline renumbers frames into the wakeword channel, because that channel is fed only
+while IDLE: every turn used to leave a hole there and the engine, unable to know the pause
+was deliberate, logged `wakeword: frame gap, expected seq=4 got 1077` — 21 s of audio
+apparently thrown away, none of which was. Real loss is reported by `VoicePipeline._on_frame`,
+in frames and milliseconds, and counted in `counters.extra["frames_dropped"]`.
+
+Measured on the desktop app, two minutes of live capture with a 14B model, an embedding model
+and an HTTP server on the same event loop: **6132 frames, 0 dropped, 0 gaps.** The pipeline is
+not starved by the gateway's loop.
+
 ## Endpointing
 
 `endpoint_silence_ms` lives in `ars_core.VoiceConfig` (default 700). Everything else is in

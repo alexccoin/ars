@@ -165,8 +165,19 @@ class PiperTtsEngine(TtsEngine):
 
     @property
     def pinned_voices(self) -> frozenset[str]:
-        """The active voice per language. Warm at startup and never evicted."""
-        return frozenset(self._voices_by_language.values())
+        """The *models* behind the active voice per language. Warm at startup, never evicted.
+
+        Models, not names: `ARS_TTS_VOICE_EN=poppy` is a legal configuration and the thing
+        the cache holds is `en_GB-semaine-medium`. Pinning the name would protect nothing and
+        the default voice would be evictable again, silently.
+        """
+        models = set()
+        for language in self._voices_by_language:
+            try:
+                models.add(self.resolve(None, language).model)
+            except (UnknownVoiceError, ValueError, OSError):
+                models.add(self.voice_for(language))
+        return frozenset(models)
 
     def resolve(self, spec: str | None, language: Language) -> VoiceSelection:
         """Turn `SynthesisRequest.voice` into a model + speaker id. Raises on anything it
@@ -177,10 +188,10 @@ class PiperTtsEngine(TtsEngine):
         redirect a name the user picked.
         """
         parsed = parse_voice_spec(spec)
-        name = parsed.voice
-        if not name:
-            default = self.voice_for(language)
-            return VoiceSelection(requested=default, model=default)
+        # An empty spec resolves the *configured* default through the same path, so
+        # `ARS_TTS_VOICE_RO=mihai_deep` is as valid a configuration as a raw model name.
+        configured = self.voice_for(language)
+        name = parsed.voice or configured
 
         profile = VOICES_BY_NAME.get(name)
         if profile is not None:
@@ -192,7 +203,10 @@ class PiperTtsEngine(TtsEngine):
             return self._from_profile(profile)
 
         model, _, speaker = name.partition(SPEAKER_SEPARATOR)
-        if not self._model_path(model).is_file():
+        if name != configured and not self._model_path(model).is_file():
+            # The configured default is exempt from the file check: it must fail at load
+            # with "run scripts/fetch_voice_models.sh", not here as an unknown name, and the
+            # engine has to be constructible on a machine with no weights at all.
             raise UnknownVoiceError(
                 f"unknown voice {name!r}: not in the catalogue "
                 f"({len(VOICES_BY_NAME)} names) and no {model}.onnx in {self.model_dir}"
@@ -291,21 +305,26 @@ class PiperTtsEngine(TtsEngine):
         timings: dict[Language, float] = {}
         for language in languages:
             start = time.perf_counter()
-            voice = await self._model(self.voice_for(language))
-            await asyncio.to_thread(self._prime, voice, language)
+            selection = self.resolve(None, language)
+            voice = await self._model(selection.model)
+            await asyncio.to_thread(self._prime, voice, language, selection)
             timings[language] = (time.perf_counter() - start) * 1000
             log.info("piper %s warm in %.0f ms", self.voice_for(language), timings[language])
         return timings
 
-    def _prime(self, voice, language: Language) -> None:
+    def _prime(self, voice, language: Language, selection: VoiceSelection | None = None) -> None:
         """One throwaway synthesis. Loading the ONNX graph is not the whole cost: the first
-        inference allocates its arenas and runs espeak-ng phonemisation for the first time."""
+        inference allocates its arenas and runs espeak-ng phonemisation for the first time.
+
+        Primed with the *configured* selection, speaker and pitch shift included, because
+        that is the one that has to be warm when the user speaks first."""
         # A full sentence, not one word: ONNX Runtime allocates per input shape, and priming
         # on "Ready." left the first real reply paying for it — measured as a 115 ms
         # time-to-first-audio on turn one against 40-60 ms afterwards.
         text = _PRIMING_SENTENCE[language]
-        default = self.voice_for(language)
-        selection = VoiceSelection(requested=default, model=default)
+        if selection is None:
+            default = self.voice_for(language)
+            selection = VoiceSelection(requested=default, model=default)
         for _ in self._iter_piper_audio(voice, text, selection, speed=1.0):
             return
 

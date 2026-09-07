@@ -21,6 +21,7 @@ honestly.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 import pytest
 from ars_protocol import AgentState, Device, Session
@@ -74,6 +75,13 @@ def one_question() -> list:
     )
 
 
+async def _until_thinking(pipeline: VoicePipeline) -> None:
+    """Wait for the turn to actually reach the model. An `asyncio.Event` would be tidier
+    but the pipeline does not expose one, and polling a state machine is honest here."""
+    while pipeline.state is not AgentState.THINKING:  # noqa: ASYNC110
+        await asyncio.sleep(0.01)
+
+
 async def realtime(frames) -> object:
     for frame in frames:
         await asyncio.sleep(0.02)
@@ -98,11 +106,10 @@ async def test_a_press_while_thinking_opens_the_microphone_now_not_later() -> No
 
     async def press_once_thinking() -> None:
         await pipeline.request_turn()  # from IDLE: arms, as before
-        while pipeline.state is not AgentState.THINKING:
-            await asyncio.sleep(0.01)
+        await _until_thinking(pipeline)
         outcome.append(await pipeline.request_turn())
 
-    asyncio.create_task(press_once_thinking())
+    presser = asyncio.create_task(press_once_thinking())
 
     async def drive() -> None:
         async for event in pipeline.run(realtime(one_question())):
@@ -112,6 +119,7 @@ async def test_a_press_while_thinking_opens_the_microphone_now_not_later() -> No
                     return
 
     await asyncio.wait_for(drive(), timeout=15)
+    presser.cancel()
 
     assert outcome == ["interrupted"]
     assert states[-1] is AgentState.LISTENING, (
@@ -130,11 +138,10 @@ async def test_pressing_while_thinking_stops_the_model_that_is_thinking() -> Non
 
     async def press_once_thinking() -> None:
         await pipeline.request_turn()
-        while pipeline.state is not AgentState.THINKING:
-            await asyncio.sleep(0.01)
+        await _until_thinking(pipeline)
         await pipeline.request_turn()
 
-    asyncio.create_task(press_once_thinking())
+    presser = asyncio.create_task(press_once_thinking())
 
     async def drive() -> None:
         async for _ in pipeline.run(realtime(one_question())):
@@ -142,6 +149,7 @@ async def test_pressing_while_thinking_stops_the_model_that_is_thinking() -> Non
                 return
 
     await asyncio.wait_for(drive(), timeout=15)
+    presser.cancel()
     assert handler.cancelled, "the reply was abandoned but the model was left running"
 
 
@@ -181,11 +189,10 @@ async def test_an_interrupt_and_listen_is_one_transition_not_a_blink() -> None:
 
     async def press_once_thinking() -> None:
         await pipeline.request_turn()
-        while pipeline.state is not AgentState.THINKING:
-            await asyncio.sleep(0.01)
+        await _until_thinking(pipeline)
         await pipeline.request_turn()
 
-    asyncio.create_task(press_once_thinking())
+    presser = asyncio.create_task(press_once_thinking())
 
     async def drive() -> None:
         async for event in pipeline.run(realtime(one_question())):
@@ -197,6 +204,7 @@ async def test_an_interrupt_and_listen_is_one_transition_not_a_blink() -> None:
                     return
 
     await asyncio.wait_for(drive(), timeout=15)
+    presser.cancel()
 
     after_thinking = states[states.index(AgentState.THINKING) + 1:]
     assert after_thinking and after_thinking[0] is AgentState.LISTENING, (
@@ -215,11 +223,10 @@ async def test_the_stop_button_still_stops_rather_than_reopening_the_microphone(
 
     async def interrupt_when_thinking() -> None:
         await pipeline.request_turn()
-        while pipeline.state is not AgentState.THINKING:
-            await asyncio.sleep(0.01)
+        await _until_thinking(pipeline)
         await pipeline.interrupt("user_cancel")
 
-    asyncio.create_task(interrupt_when_thinking())
+    presser = asyncio.create_task(interrupt_when_thinking())
 
     async def drive() -> None:
         async for event in pipeline.run(realtime(one_question())):
@@ -229,6 +236,7 @@ async def test_the_stop_button_still_stops_rather_than_reopening_the_microphone(
                     return
 
     await asyncio.wait_for(drive(), timeout=15)
+    presser.cancel()
 
     after_thinking = states[states.index(AgentState.THINKING) + 1:]
     assert after_thinking[0] is AgentState.IDLE
@@ -294,3 +302,65 @@ async def test_audio_that_really_went_missing_is_reported_in_milliseconds() -> N
 
     assert pipeline.counters.frame_gaps == 1
     assert pipeline.counters.extra["frames_dropped"] == 10
+
+
+@pytest.mark.asyncio
+async def test_a_press_during_the_decode_does_not_answer_the_abandoned_question() -> None:
+    """TRANSCRIBING is short — roughly 150 ms on real engines — but it is not zero.
+
+    `_close_utterance` awaits the final decode, and a press that lands in that window opens
+    a new utterance underneath it. Without an epoch to compare, the decode then comes back,
+    starts a reply for the question the user has already moved past, and the session has two
+    turns in flight: two replies, two voices, one of which nobody asked for.
+
+    The decode is slowed to 600 ms here so the window is real rather than lucky.
+    """
+    config = VoicePipelineConfig()
+    config.tts.backend = "mock"
+    pipeline = VoicePipeline(
+        wakeword=ManualWakewordEngine(pre_roll_ms=config.wakeword.pre_roll_ms),
+        vad=EnergyVadEngine(),
+        asr=MockAsrEngine(
+            ["what is the annual paid leave", "and how much notice"], final_decode_ms=600.0
+        ),
+        tts=MockTtsEngine(chunk_ms=config.tts.chunk_ms, realtime_factor=60.0),
+        handler=SlowHandler(),
+        config=config,
+        session=Session(device=Device.HEADLESS),
+        sink=NullSink(),
+    )
+    finals: list[str] = []
+
+    await pipeline.request_turn()
+
+    async def press_during_the_decode() -> None:
+        while pipeline.state is not AgentState.TRANSCRIBING:  # noqa: ASYNC110
+            await asyncio.sleep(0.005)
+        await asyncio.sleep(0.1)  # squarely inside the 600 ms decode
+        await pipeline.request_turn()
+
+    presser = asyncio.create_task(press_during_the_decode())
+
+    async def drive() -> None:
+        async for event in pipeline.run(realtime(one_question())):
+            kind = getattr(event, "type", None)
+            if kind == "transcript" and event.transcript.is_final:
+                finals.append(event.transcript.text)
+            if kind == "state" and event.state is AgentState.LISTENING and finals:
+                return
+            if kind == "state" and event.state is AgentState.LISTENING and (
+                pipeline.counters.wake_events > 1
+            ):
+                return
+
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(drive(), timeout=10)
+    presser.cancel()
+    await asyncio.sleep(0.3)
+
+    assert finals == [], (
+        f"a superseded utterance was answered anyway: {finals}"
+    )
+    assert pipeline.counters.utterances == 0, (
+        "the abandoned question was counted, and therefore replied to"
+    )

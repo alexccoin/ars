@@ -58,7 +58,7 @@ class FakeLoadEngine(PiperTtsEngine):
     async def _load_model(self, name: str) -> str:
         return f"model:{name}"
 
-    def _prime(self, voice: object, language: Language) -> None:
+    def _prime(self, voice: object, language: Language, selection: object = None) -> None:
         """Priming is a real synthesis and there is no real model here. Warm-up timings are
         meaningless in this subclass; which voices it *loads* is the point."""
 
@@ -138,6 +138,31 @@ def test_a_caller_picks_a_voice_by_name_not_by_speaker_id():
     assert selection.model == "en_GB-vctk-medium"
     assert selection.speaker_id == 72
     assert selection.formant_k == 1.0
+
+
+def test_a_catalogue_name_is_a_valid_configured_default():
+    """`ARS_TTS_VOICE_EN=poppy` has to work: it is the obvious way to change the assistant's
+    voice, and it goes through `PiperTtsEngine(voice_en=...)`, not through a request. The
+    trap is residency - what gets pinned and cached is the *model*, and the name and the
+    model are no longer the same string."""
+    engine = FakeLoadEngine(model_dir=MODELS, voice_en="poppy", voice_ro="mihai_deep")
+    assert engine.resolve(None, Language.EN).speaker_id == 3
+    assert engine.resolve(None, Language.RO).formant_k == 0.85
+    assert engine.pinned_voices == {
+        "en_GB-semaine-medium", "ro_RO-mihai-medium", "de_DE-thorsten-medium"
+    }
+
+
+async def test_a_catalogue_default_is_warm_and_pinned_after_warm_up():
+    """The 120 ms budget on turn one depends on warm-up having loaded the voice that will
+    actually speak. Configuring by catalogue name used to load a file called `poppy.onnx`,
+    which does not exist."""
+    engine = FakeLoadEngine(model_dir=MODELS, voice_en="poppy")
+    await engine.warm_up()
+    assert "en_GB-semaine-medium" in engine.resident_voices
+    for name in ("en_GB-vctk-medium", "en_US-arctic-medium", "en_GB-alan-medium"):
+        await engine._model(name)
+    assert "en_GB-semaine-medium" in engine.resident_voices, "the configured default was evicted"
 
 
 def test_the_configured_default_still_works_as_a_bare_model_name():

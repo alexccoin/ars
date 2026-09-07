@@ -51,14 +51,36 @@ COLLECT_ALL = [
     "openwakeword",  # ships its .tflite/.onnx wakeword models as package data
     "sounddevice",  # bundles a portaudio dylib
     "silero_vad",  # ships its packaged onnx model
+    "sqlite_vec",  # loads vec0.dylib via sqlite3 .load_extension(), not a Python import —
+    # confirmed missing the hard way: the frozen app ran but silently fell back to the
+    # numpy brute-force vector index every launch until this was added.
 ]
+
+# Two in-repo packages ship *their own* non-code data (SQL migrations, prompt text)
+# next to their Python source, copied into place by `[tool.hatch.build.targets.
+# wheel.force-include]` — a build-time step for a real `pip install`, which never runs
+# for an editable workspace install, and which PyInstaller cannot discover either way
+# (it follows `import` statements, not arbitrary files sitting in a package directory).
+# Verified the hard way: a first build hung, then a console rebuild showed
+# `FileNotFoundError: ars_auth migrations for 'grants' not found` — ars_auth/migrations.py
+# has a "wheel bundle" fallback (`importlib.resources.files("ars_auth") / "_bundled" /
+# "migrations"`) that this recreates by hand; ars_compute/prompts/__init__.py resolves
+# its own directory via `Path(__file__).parent`, which only lands on real files if the
+# package itself is unpacked onto disk rather than zipped — hence `noarchive=True` below.
+AUTH_MIGRATIONS = REPO_ROOT / "services" / "auth" / "data" / "migrations"
+COMPUTE_PROMPTS = REPO_ROOT / "services" / "compute" / "src" / "ars_compute" / "prompts"
 
 # Built up *before* Analysis() runs, not appended to a.datas/a.binaries afterwards:
 # Analysis() normalizes its own datas/binaries into internal 3-tuple TOC entries, while
 # collect_all() returns plain 2-tuple (src, dest) pairs in the format Analysis() itself
 # expects as input — mixing the two by appending post-hoc breaks COLLECT()'s TOC
 # normalization ("not enough values to unpack").
-extra_datas = [(str(_hint_file), ".")]
+extra_datas = [
+    (str(_hint_file), "."),
+    (str(AUTH_MIGRATIONS / "grants"), "ars_auth/_bundled/migrations/grants"),
+    (str(AUTH_MIGRATIONS / "vault"), "ars_auth/_bundled/migrations/vault"),
+    (str(COMPUTE_PROMPTS), "ars_compute/prompts"),
+]
 extra_binaries = []
 extra_hiddenimports = []
 for _pkg in COLLECT_ALL:
@@ -87,7 +109,11 @@ a = Analysis(
         "mypy",
         "ruff",
     ],
-    noarchive=False,
+    # Real on-disk .py/.pyc files rather than zipped into the PYZ archive — required for
+    # ars_auth's and ars_compute's own `Path(__file__)`/`importlib.resources` data
+    # lookups (see AUTH_MIGRATIONS/COMPUTE_PROMPTS above) to land on real files instead
+    # of a zipimport location that doesn't behave like a normal filesystem path.
+    noarchive=True,
     optimize=0,
 )
 
