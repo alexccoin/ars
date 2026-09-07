@@ -384,6 +384,10 @@ async function main() {
         }
         break;
       }
+      case 'persona': {
+        applyPersona(msg.persona, msg.reason);
+        break;
+      }
       case 'consent_required': {
         statePip.setState('warn');
         statePip.setLabel(t('state.waiting_for_consent', getLang()));
@@ -417,6 +421,29 @@ async function main() {
         // grant_changed, observation_proposed) — not part of this text console's scope.
         break;
     }
+  }
+
+  // --------------------------------------------------------------------------- persona
+  //
+  // The gateway decides who this turn is for; the console only reacts. When it says
+  // 'companion', A.R.S changes shape — it is the same being with the same six states,
+  // in the form it uses when the turn is about the child. It is announced in the
+  // console every time, in the user's language: a machine that changes its face
+  // without saying why is unsettling, not friendly. `reason` is the gateway's own
+  // words and is printed as it arrives; the sentence around it is translated here.
+  let currentPersona = 'default';
+
+  function applyPersona(persona, reason) {
+    const key = persona === 'companion' ? 'companion' : 'default';
+    if (key === currentPersona) return;
+    currentPersona = key;
+    entity.setPersona(key);
+    document.documentElement.dataset.persona = key;
+    const why = String(reason || '').trim();
+    consoleUI.appendSystemLine(
+      why ? t(`persona.${key}_because`, getLang(), { reason: why }) : t(`persona.${key}`, getLang()),
+      'info',
+    );
   }
 
   function mapAgentStateToPipState(s) {
@@ -628,6 +655,18 @@ async function main() {
   updateOfflineBanner();
 
   // --------------------------------------------------------------------------- go
+
+  // One handle, for the browser console. This is how the being gets driven by hand
+  // while the gateway half of a feature is still being written — and how the states
+  // and the two personas get screenshotted without a server that can produce them.
+  window.ars = {
+    entity,
+    deck,
+    event: handleServerEvent,
+    persona: (p, reason) => applyPersona(p, reason || ''),
+    setLang,
+    get lang() { return getLang(); },
+  };
 
   consoleUI.appendSystemLine(t('console.help', getLang()), 'info');
   consoleUI.focusInput();

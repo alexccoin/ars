@@ -125,3 +125,38 @@ async def test_chunks_stored_before_the_catalogue_existed_are_adopted(
         assert await DocumentLibrary(final).rehydrate() == 0
     finally:
         await final.close()
+
+
+@pytest.mark.asyncio
+async def test_the_same_file_twice_is_one_document(config: MemoryConfig) -> None:
+    """Re-uploading a file, or re-running an importer that failed halfway, used to create
+    a second complete copy — twice the passages, twice the translations, and a retrieval
+    with two identical top hits. The tier ladder then refuses to answer at all, because
+    its ambiguity rule cannot tell a passage from its own duplicate. Three copies of four
+    Romanian folk tales is how this was found."""
+    store = await SqliteMemoryStore.open(config)
+    try:
+        library = DocumentLibrary(store)
+        first = await library.learn("contract.txt", LEASE.encode())
+        second = await library.learn("contract.txt", LEASE.encode())
+
+        assert second.id == first.id
+        assert len(library.catalogue()) == 1
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
+async def test_a_changed_file_is_a_new_document(config: MemoryConfig) -> None:
+    """Same name, different content: that is a revision the user wants learned, not a
+    duplicate to swallow."""
+    store = await SqliteMemoryStore.open(config)
+    try:
+        library = DocumentLibrary(store)
+        first = await library.learn("contract.txt", LEASE.encode())
+        second = await library.learn("contract.txt", (LEASE + "\nAnexă: parcare 80 EUR.").encode())
+
+        assert second.id != first.id
+        assert len(library.catalogue()) == 2
+    finally:
+        await store.close()

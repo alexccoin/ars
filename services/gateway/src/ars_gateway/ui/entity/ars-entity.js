@@ -30,17 +30,33 @@
 
    Colours come from theme.css (--ars-entity-*). Do not hardcode them here.
 
+   Two personas, one being. setPersona('companion') is for turns about the
+   child: the crystal becomes a small alert rescue-pup — ears out of the core's
+   own profile, the one mechanical iris splitting into two eyes, a hexagonal
+   badge on a collar, warm blue and gold instead of instrument cyan. It is a
+   continuous morph driven by a single number (`pup`), not a second drawing:
+   every shape below is a mix between the two forms at that value, which is why
+   you can stop it half way and it still looks like something. The six states,
+   the rings, the lattice and the whole API are unchanged in either form.
+
+   The companion is original work. It is not, and must not become, a likeness
+   of any existing character — no traced silhouette, no logo, no name. It
+   evokes "friendly rescue pup" the way any rescue service does: blue, gold,
+   alert ears, a badge.
+
    API
      const ars = new ArsEntity(canvasEl, { size: 'auto', quality: 'auto' });
      ars.setState('idle'|'listening'|'thinking'|'speaking'|'acting'|'alert');
      ars.setIntensity(0..1);
      ars.setTier('recall'|'documents'|'local model'|'cloud model');
+     ars.setPersona('default'|'companion');
      ars.destroy();
    plus: pulse(), lookAt(x,y), setQuality(n|'auto'), refreshTheme(), stats()
    ========================================================================== */
 
 export const ARS_STATES = ['idle', 'listening', 'thinking', 'speaking', 'acting', 'alert'];
 export const ARS_TIERS = ['recall', 'documents', 'local model', 'cloud model'];
+export const ARS_PERSONAS = ['default', 'companion'];
 
 /* --- small maths ------------------------------------------------------- */
 
@@ -135,6 +151,12 @@ const RING_SPEED = [0.055, -0.032, 0.018, -0.011, 0.026, -0.007, 0.014, -0.020];
 /* Detent step per ring, in revolutions, used by `acting`. */
 const RING_DETENT = [1 / 24, 1 / 12, 1 / 8, 1 / 6, 1 / 12, 1 / 6, 1 / 8, 1 / 12];
 
+/* What is left of the ring assembly once the pup is out: the four outer rings
+   carry on almost untouched (the level ring is still its VU), the four inner
+   ones drop to a trace so they read as structure behind a face rather than as
+   bars across it. */
+const PUP_RING = [0.07, 0.09, 0.05, 0.07, 0.85, 0.55, 0.92, 0.72];
+
 const QUALITY = [
   { dpr: 1.00, bloom: false, bloomDiv: 4, filaments: 6,  motes: 28,  grain: 0.0 },
   { dpr: 1.25, bloom: true,  bloomDiv: 4, filaments: 14, motes: 90,  grain: 0.6 },
@@ -198,6 +220,9 @@ uniform float uRingGain[8];
 uniform int   uLevelSeg;  // detent ticks lit on the level ring (acting)
 uniform float uMinW;      // half-width floor, in unit space, = ~0.6px at this size
 uniform float uDetail;    // 0 = 44px favicon, 1 = full centre-stage assembly
+uniform float uPup;       // 0 = the crystal, 1 = the companion. Nothing switches.
+uniform vec3  uPupPose;   // (head tilt, bob, tag swing) — all zero when uPup is 0
+uniform vec2  uPupEar;    // per-ear perk, so the two ears never move in lockstep
 ${GLSL_COMMON}
 
 /* Machined ring assembly. Radius, half-width, tick count, duty cycle. */
@@ -219,6 +244,37 @@ float sdHex(vec2 p, float r){
   p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
   p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
   return length(p) * sign(p.y);
+}
+
+/* --- the companion form -------------------------------------------------
+   Original work, built out of A.R.S's own parts rather than out of anybody
+   else's character: the ears are two bumps on the core's polar profile, the
+   eyes are the one mechanical iris split in two, the badge is the same
+   hexagon the lattice is made of, stood on a point. Warm blue and gold
+   because that is what a small rescue vehicle looks like everywhere in the
+   world. Nothing here is traced from or measured against a reference. */
+float angDist(float a, float c){ return abs(mod(a - c + PI, TAU) - PI); }
+
+/* One bump on the profile. wIn/wOut differ so an ear can lean outward, and the
+   tip is deliberately half-rounded: a sharp narrow spike reads as a cat, and a
+   fully round lobe reads as a bear. A pup is the blend. */
+float pupEar(float a, float c, float wIn, float wOut, float h){
+  float d = mod(a - c + PI, TAU) - PI;
+  float t = max(0.0, 1.0 - abs(d) / (d > 0.0 ? wIn : wOut));
+  return h * mix(t * t * (2.0 - t), t * t * (3.0 - 2.0 * t), 0.55);
+}
+
+/* Radius multiplier per angle: crown, cheeks, muzzle, two alert ears. Exactly
+   1.0 everywhere when the ear heights are zero, which is what lets the head be
+   a continuous deformation of the sphere instead of a second shape. */
+float pupProfile(float a, vec2 ear){
+  float f = 1.0;
+  f += 0.075 * cos(2.0 * a);                     /* wider than tall — cheeks   */
+  f -= 0.050 * max(0.0, -sin(a));
+  f += pupEar(a, -PI * 0.5, 0.95, 0.95, 0.16);   /* the muzzle pushing forward */
+  f += pupEar(a,      0.98, 0.30, 0.46, 0.68 + ear.x);
+  f += pupEar(a, PI - 0.98, 0.46, 0.30, 0.68 + ear.y);
+  return f;
 }
 
 /* NOTE — every smoothstep in this file is written edge0 < edge1 and inverted
@@ -301,8 +357,10 @@ void main(){
     float fw = clamp(fwidth(ang), 1e-4, 0.2);
     float on = 1.0 - smoothstep(lvl - fw, lvl + fw, ang);
     float ticks = mix(1.0, arcMask(a0, 24.0, 0.55, uRingRot[4]), uAct);
-    col += mix(uColB, vec3(1.0), 0.10) * band(d) * on * ticks * (0.6 + 0.9 * uIntensity);
-    col += uColA * band(abs(r0 - R) - max(0.0018, uMinW * 0.8)) * 0.25;
+    /* around the companion this is a halo behind a face, not the subject */
+    float lg = mix(1.0, 0.30, uPup);
+    col += mix(uColB, vec3(1.0), 0.10) * band(d) * on * ticks * (0.6 + 0.9 * uIntensity) * lg;
+    col += uColA * band(abs(r0 - R) - max(0.0018, uMinW * 0.8)) * 0.25 * lg;
   }
 
   /* index marker — a chevron that points where A.R.S is attending. This is the
@@ -340,18 +398,29 @@ void main(){
     col += uColA * ring * uOpen * 0.10 * (0.4 + uIntensity);
   }
 
-  /* -- the crystalline core -------------------------------------------- */
-  vec2 q = uv - uLook * 0.014;
+  /* -- the crystalline core --------------------------------------------
+     The companion form is not a second drawing laid over this one: it is this
+     one, deformed. uPup drives a polar profile that is 1.0 at every angle when
+     it is zero, so the crystal and the pup's head are the same surface at two
+     settings of one number. Everything from here down reads rn — the radius
+     divided by that profile — which is identically rq while uPup is 0. */
+  vec2 q = uv - uLook * 0.014 - vec2(0.0, uPupPose.y);
+  {
+    float ct = cos(uPupPose.x), st = sin(uPupPose.x);
+    q = mat2(ct, st, -st, ct) * q;     /* the head tilt. Zero unless it is the pup. */
+  }
   float rq = length(q);
   float aq = atan(q.y, q.x);
   float cr = uCore * breathe;
+  float prof = mix(1.0, pupProfile(aq, uPupEar), uPup);
+  float rn = rq / max(prof, 0.25);
 
   float k = 6.0;
   float kseg = TAU / k;
   float af = mod(aq + uCoreRot, kseg) - kseg * 0.5;
   vec2 fq = vec2(cos(af), sin(af)) * rq;
 
-  float coreMask = 1.0 - smoothstep(cr * 0.80, cr, rq);
+  float coreMask = 1.0 - smoothstep(cr * 0.80, cr, rn);
   if (coreMask > 0.001) {
     vec2 lp = fq * (mix(3.0, 7.2, uDetail) / max(cr, 0.06));
     vec4 hx = getHex(lp + vec2(uTime * 0.04, 0.0));
@@ -363,33 +432,163 @@ void main(){
     float wire = 1.0 - smoothstep(0.008, 0.075, ed);
     float fill = 1.0 - smoothstep(0.03, 0.34, ed);
     float lattice = wire * (0.45 + 1.15 * act) + fill * act * 0.40;
-    col += mix(uColA, uColB, clamp(act, 0.0, 1.0) * 0.75) * lattice * coreMask * 1.25;
+    col += mix(uColA, uColB, clamp(act, 0.0, 1.0) * 0.75) * lattice * coreMask * 1.25 * mix(1.0, 0.62, uPup);
     /* faceting: the kaleidoscope seams catch the light like cut crystal */
     float facet = pow(abs(cos(af * 3.0)), 8.0);
     col += uColB * facet * coreMask * 0.10;
   }
 
-  /* core shell + halo */
-  col += mix(uColB, vec3(1.0), 0.12) * band(abs(rq - cr) - max(0.0035, uMinW)) * 1.15;
-  col += uColA * exp(-max(rq - cr, 0.0) * 13.0) * 0.20 * uGain;
+  /* core shell + halo — the same stroke draws the crystal's edge and the
+     pup's outline, ears included, because the profile is inside rn */
+  col += mix(uColB, vec3(1.0), 0.12) * band(abs(rn - cr) - max(0.0035, uMinW)) * 1.15;
+  col += uColA * exp(-max(rn - cr, 0.0) * 13.0) * 0.20 * uGain;
 
-  /* -- the iris: eight machined blades over the lattice ----------------- */
+  /* -- the aperture: eight machined blades, or two eyes -----------------
+     The being has one eye; the companion has two, and they are the same eye.
+     Both eye centres start exactly at the origin and both eye radii start at
+     the iris aperture, so at uPup = 0 the union of the pair is the single
+     mechanical iris to the last bit, and the split is something you watch
+     happen rather than something that has happened. */
   float apr = cr * (0.10 + 0.74 * uIris);
   float bseg = TAU / 8.0;
   float ba = mod(aq + uIrisRot, bseg) - bseg * 0.5;
   float bladeR = rq * cos(ba);
-  float apert = bladeR - apr;
+  float apertIris = bladeR - apr;
+
+  vec2  eyeOff = vec2(0.42, 0.20) * cr * uPup;
+  float lidH   = mix(0.20, 1.0, sqrt(clamp(uIris, 0.0, 1.0)));   /* squint, blink, wide */
+  float eyeSy  = 1.0 / max(mix(1.0, lidH, uPup), 0.10);
+  float eyeR   = mix(apr, cr * 0.315, uPup);
+  vec2  eL = q + vec2(eyeOff.x, -eyeOff.y);
+  vec2  eR = q - vec2(eyeOff.x,  eyeOff.y);
+  float dEyes = min(length(vec2(eL.x, eL.y * eyeSy)), length(vec2(eR.x, eR.y * eyeSy))) - eyeR;
+
+  float apert = mix(apertIris, dEyes, uPup);
   float insideAp = band(apert);
   float bladeZone = coreMask * (1.0 - insideAp);
-  col = mix(col, col * 0.30 + uColDeep * 0.55, bladeZone * 0.72);
+  /* the machined shutter thins into an eyelid: keep it hard on the crystal,
+     go soft on the pup, or the friendly form reads as a masked one */
+  col = mix(col, col * 0.30 + uColDeep * 0.55, bladeZone * 0.72 * mix(1.0, 0.42, uPup));
   float seam = band(abs(abs(ba) - bseg * 0.5) * rq - max(0.0016, uMinW * 0.7));
-  col += uColB * seam * bladeZone * 0.45;
+  col += uColB * seam * bladeZone * 0.45 * (1.0 - uPup);
   col += mix(uColB, vec3(1.0), 0.25) * band(abs(apert) - max(0.0030, uMinW)) * 1.25;
 
-  /* nucleus — the light that lives behind the aperture */
+  /* nucleus — the light that lives behind the aperture. It hands over to the
+     two eyes below; what is left at uPup = 1 is a small gleam on the brow. */
   float nu = exp(-pow(rq / max(apr, 0.02), 2.0) * 3.4);
-  col += mix(uColB, vec3(1.0), 0.22) * nu * insideAp * (0.55 + 1.15 * uIntensity);
-  col += vec3(1.0) * exp(-rq * rq / (0.0006 + 0.0055 * (1.0 - uThink))) * (0.35 + 0.85 * uThink);
+  col += mix(uColB, vec3(1.0), 0.22) * nu * insideAp * (0.55 + 1.15 * uIntensity) * (1.0 - uPup);
+  col += vec3(1.0) * exp(-rq * rq / (0.0006 + 0.0055 * (1.0 - uThink))) * (0.35 + 0.85 * uThink) * (1.0 - 0.86 * uPup);
+
+  /* -- companion: face, collar, badge ----------------------------------- */
+  if (uPup > 0.004) {
+    float P = uPup;
+    vec2 gaze = clamp(uLook * 1.8, vec2(-1.0), vec2(1.0));
+
+    /* inner ear — warm gold up inside each ear, which is most of what makes
+       two spikes read as ears rather than as a crown */
+    float ein = max(pupEar(aq, 0.98, 0.30, 0.46, 1.0), pupEar(aq, PI - 0.98, 0.46, 0.30, 1.0));
+    float earGlow = smoothstep(0.20, 0.95, ein)
+                  * smoothstep(cr * 0.96, cr * 1.20, rq)
+                  * (1.0 - smoothstep(cr * 1.30, cr * 1.62, rq));
+    col += mix(uColB, uColA, 0.20) * earGlow * P * 0.55;
+
+    /* the body light. The crystal is a lattice you look into; the companion is
+       a small solid animal, so it gets filled in. */
+    col += mix(uColA, uColB, 0.10) * (1.0 - smoothstep(cr * 0.30, cr * 1.04, rn)) * P * 0.26;
+
+    /* the eyes */
+    for (int i = 0; i < 2; i++) {
+      vec2 ec = vec2(i == 0 ? -eyeOff.x : eyeOff.x, eyeOff.y);
+      vec2 pe = q - ec;
+      float dEye = length(vec2(pe.x, pe.y * eyeSy)) - eyeR;
+      float inEye = band(dEye);
+      /* an eye is a window, not a lamp: darken it, then light what is inside */
+      col = mix(col, col * 0.14 + uColDeep * 0.40, inEye * P * 0.94);
+      col += mix(uColA, vec3(1.0), 0.62) * inEye * P * 0.40;
+      vec2 pc = pe - gaze * eyeR * 0.26;
+      float pr = eyeR * mix(0.70, 0.46, lidH);
+      float dPu = length(vec2(pc.x, pc.y * eyeSy)) - pr;
+      col = mix(col, uColDeep * 0.35, band(dPu) * P * 0.95);
+      col += uColB * band(abs(dPu) - max(0.0030, uMinW)) * P * 0.95;
+      /* the catchlight. Without a specular dot an eye is a hole, not a look. */
+      float cat = 1.0 - smoothstep(eyeR * 0.09, eyeR * 0.24, length(pc - vec2(-0.30, 0.34) * eyeR));
+      col += vec3(1.0) * cat * P * (0.85 + 0.5 * uIntensity);
+      /* the tan brow spot a great many working dogs have, angled by mood. Two
+         marks, not two bars: it is an eyebrow, not a girder. */
+      float bt = (i == 0 ? 1.0 : -1.0) * (0.40 * uThink - 0.20 * uOpen + 0.35 * uHazard);
+      vec2 bp = pe - vec2(0.0, eyeR * (1.34 + 0.20 * uOpen));
+      bp = mat2(cos(bt), sin(bt), -sin(bt), cos(bt)) * bp;
+      col += mix(uColB, vec3(1.0), 0.10) * band(length(vec2(bp.x * 1.15, bp.y * 4.2)) - eyeR * 0.46) * P * 0.75;
+    }
+
+    /* the snout: a lighter muzzle that sits proud of the face, a big soft nose,
+       and a mouth that opens with the voice */
+    vec2 mp = q - vec2(0.0, -cr * 0.52);
+    float dMz = length(vec2(mp.x / 1.26, mp.y / 1.0)) - cr * 0.41;
+    col += mix(uColA, vec3(1.0), 0.62) * band(dMz) * P * 0.20;
+    col += mix(uColB, uColA, 0.35) * band(abs(dMz) - max(0.0026, uMinW)) * P * 0.42;
+
+    vec2 np = q - vec2(0.0, -cr * 0.34);
+    float dNo = length(vec2(np.x / 1.45, np.y / 0.92)) - cr * 0.165;
+    col = mix(col, uColDeep * 0.5, band(dNo) * P * 0.9);
+    col += uColB * band(abs(dNo) - max(0.0030, uMinW)) * P * 0.85;
+    col += vec3(1.0) * (1.0 - smoothstep(cr * 0.015, cr * 0.070,
+            length(np - vec2(-cr * 0.055, cr * 0.060)))) * P * 0.70;
+
+    {
+      float gape = clamp((0.10 + 0.90 * uIntensity) * uSpeak, 0.0, 1.0);
+      float shut = 1.0 - smoothstep(0.05, 0.30, gape);
+      /* closed: two arcs under the nose, the smile every dog draws */
+      vec2 kp = vec2(abs(q.x), q.y);
+      vec2 cc = vec2(cr * 0.200, -cr * 0.62);
+      float dSm = abs(length(kp - cc) - cr * 0.205) - max(0.0028, uMinW);
+      float lower = smoothstep(cr * 0.13, -cr * 0.02, kp.y - cc.y);
+      col += mix(uColB, vec3(1.0), 0.2) * band(dSm) * lower * P * shut * 0.85;
+      /* the stem from the nose down to the mouth */
+      float dStem = max(abs(q.x) - max(0.0024, uMinW), abs(q.y + cr * 0.53) - cr * 0.115);
+      col += mix(uColB, uColA, 0.35) * band(dStem) * P * 0.55;
+      /* speaking: it opens its mouth, and there is a tongue in there. A pup
+         that talks through a black slot is not the thing we are making. */
+      if (gape > 0.05) {
+        float mrx = cr * (0.28 + 0.09 * gape);
+        float mry = cr * (0.05 + 0.17 * gape);
+        vec2  mo = vec2(q.x, q.y + cr * (0.63 + 0.10 * gape));
+        float dMo = (length(vec2(mo.x / mrx, mo.y / mry)) - 1.0) * min(mrx, mry);
+        col = mix(col, uColDeep * 0.55, band(dMo) * P * 0.9);
+        col += mix(uColB, vec3(1.0), 0.15) * band(abs(dMo) - max(0.0028, uMinW)) * P * 0.85;
+        float trx = mrx * 0.58, try_ = mry * 0.62;
+        vec2  tg = vec2(q.x, q.y + cr * (0.63 + 0.10 * gape) + mry * 0.36);
+        float dTg = (length(vec2(tg.x / trx, tg.y / try_)) - 1.0) * min(trx, try_);
+        col += mix(uColB, vec3(1.0), 0.30) * band(dTg) * P * 0.30;
+        col += mix(uColB, vec3(1.0), 0.30) * band(abs(dTg) - max(0.0024, uMinW)) * P * 0.5;
+      }
+    }
+
+    /* collar across the throat, and a tag hanging off it: A.R.S's own hexagon
+       stood on a point, with a paw inside. The badge is drawn, not borrowed. */
+    float colR = cr * 1.22;
+    float below = smoothstep(0.12, -0.42, sin(aq));
+    col += mix(uColA, uColB, 0.80) * band(abs(rq - colR) - cr * 0.075) * below * P * 0.60;
+    col += mix(uColB, vec3(1.0), 0.2) * band(abs(abs(rq - colR) - cr * 0.075) - max(0.0022, uMinW)) * below * P * 0.55;
+
+    {
+      float sw = uPupPose.z;
+      vec2 tp = q - vec2(0.0, -(colR + cr * 0.20));
+      tp = mat2(cos(sw), sin(sw), -sin(sw), cos(sw)) * tp;
+      float tr = cr * 0.215;
+      float dTag = sdHex(vec2(tp.y, tp.x), tr * 0.86);   /* point-down: a shield */
+      col = mix(col, uColDeep * 0.55, band(dTag) * P * 0.85);
+      col += uColB * band(abs(dTag) - max(0.0030, uMinW * 1.2)) * P * 1.05;
+      vec2 pw = tp / tr;
+      float paw = length(pw - vec2(0.0, -0.20)) - 0.31;
+      for (int j = 0; j < 4; j++) {
+        float ta = mix(2.42, 0.72, float(j) / 3.0);
+        paw = min(paw, length(pw - vec2(cos(ta), sin(ta)) * 0.56) - 0.145);
+      }
+      col += mix(uColB, vec3(1.0), 0.25) * band(paw) * P * 0.65;
+      col += uColB * exp(-abs(dTag) * 26.0) * P * 0.10;
+    }
+  }
 
   /* -- speaking: radial petals driven by intensity ---------------------- */
   if (uSpeak > 0.01) {
@@ -404,8 +603,12 @@ void main(){
        the waveform instead: a VU that bottoms out reads better anyway. */
     spec = clamp(spec * 0.42 + 0.5, 0.0, 1.4);
     float pl = cr + 0.018 + (0.020 + 0.20 * uIntensity) * spec;
-    col += mix(uColA, uColB, 0.55) * band(abs(rq - pl) - max(0.0032, uMinW)) * uSpeak * (0.6 + 1.1 * uIntensity);
-    col += uColA * (1.0 - smoothstep(cr, pl, rq)) * uSpeak * 0.10 * uIntensity;
+    /* the companion says it with its mouth instead, so the petals stand down
+       completely — driven by rn they would trace a huge ear-notched halo, which
+       is exactly the kind of effect that looks like a bug rather than a voice */
+    float pw = clamp(1.0 - uPup, 0.0, 1.0);
+    col += mix(uColA, uColB, 0.55) * band(abs(rn - pl) - max(0.0032, uMinW)) * uSpeak * (0.6 + 1.1 * uIntensity) * pw;
+    col += uColA * (1.0 - smoothstep(cr, pl, rn)) * uSpeak * 0.10 * uIntensity * pw;
   }
 
   /* -- acting: actuator ticks that extend and retract -------------------- */
@@ -724,6 +927,7 @@ const FALLBACK_THEME = {
     recall: [0.624, 0.933, 1.0], documents: [0.247, 0.863, 0.627],
     'local model': [0.690, 0.549, 1.0], 'cloud model': [1.0, 0.698, 0.247],
   },
+  companion: { base: [0.247, 0.510, 1.0], gold: [1.0, 0.761, 0.239], deep: [0.024, 0.082, 0.184] },
   bloom: 1.0, grain: 0.035, scan: 0.055,
 };
 
@@ -742,6 +946,11 @@ function readTheme(host) {
     rim: col('--ars-entity-rim', FALLBACK_THEME.rim),
     deep: col('--ars-entity-deep', FALLBACK_THEME.deep),
     states: {}, tiers: {},
+    companion: {
+      base: col('--ars-entity-companion-base', FALLBACK_THEME.companion.base),
+      gold: col('--ars-entity-companion-gold', FALLBACK_THEME.companion.gold),
+      deep: col('--ars-entity-companion-deep', FALLBACK_THEME.companion.deep),
+    },
     bloom: num('--ars-entity-bloom', FALLBACK_THEME.bloom),
     grain: num('--ars-entity-grain', FALLBACK_THEME.grain),
     scan: num('--ars-entity-scanline', FALLBACK_THEME.scan),
@@ -802,6 +1011,28 @@ class Model {
     this.lookStrengthTarget = 0.16;
     this.colA = theme.states.idle.slice();
     this.colB = theme.rim.slice();
+    /* Persona. `pup` is the single number the whole change of form hangs off:
+       0 is the crystal, 1 is the companion, and every shape in the shader is a
+       mix between the two at that value — so it is always mid-morph on the way
+       across, never a cut. */
+    this.persona = 'default';
+    this.pupTarget = 0;
+    this.pup = 0;
+    this.pupSpring = new Spring(0, 46, 11);
+    this.tilt = 0;
+    this.bob = 0;
+    this.tagSwing = 0;
+    this.ear = [0, 0];
+    this.ringGainOut = new Float32Array(8);
+    this.deepOut = [0, 0, 0];
+  }
+
+  setPersona(name) {
+    const key = name === 'companion' ? 'companion' : 'default';
+    if (key === this.persona) return;
+    this.persona = key;
+    this.pupTarget = key === 'companion' ? 1 : 0;
+    this.impulse = Math.max(this.impulse, 0.7);
   }
 
   setState(name) {
@@ -830,9 +1061,17 @@ class Model {
        to full value instead, then let the rim tint it only slightly. */
     const peak = Math.max(a[0], a[1], a[2], 1e-3);
     const vivid = [a[0] / peak, a[1] / peak, a[2] / peak];
-    const b = this.state === 'alert'
+    let b = this.state === 'alert'
       ? mixc(vivid, [1, 1, 1], 0.30)
       : mixc(vivid, th.rim, 0.22);
+    /* Companion: the same state hue, warmed towards blue and highlighted in
+       gold. alert keeps most of its red on purpose — a friendlier face must
+       never soften a refusal into something that reads as normal. */
+    const p = clamp(this.pup, 0, 1);
+    if (p > 0.001 && th.companion) {
+      a = mixc(a, th.companion.base, (this.state === 'alert' ? 0.30 : 0.76) * p);
+      b = mixc(b, th.companion.gold, 0.86 * p);
+    }
     return [a, b];
   }
 
@@ -859,9 +1098,32 @@ class Model {
       : approach(this.intensity, this.intensityTarget, 0.075, dt);
     this.impulse = still ? 0 : approach(this.impulse, 0, 0.28, dt);
 
+    /* the change of form. A spring, so the ears arrive with a little overshoot:
+       an eased ramp reads as a slider being dragged, a spring reads as a body. */
+    if (still) { this.pupSpring.x = this.pupTarget; this.pupSpring.v = 0; this.pup = this.pupTarget; }
+    else {
+      this.pupSpring.target = this.pupTarget;
+      this.pupSpring.step(dt);
+      this.pup = clamp(this.pupSpring.x, 0, 1.18);
+    }
+
+    /* pose — only ever non-zero for the companion. The tilt is the one a dog
+       does while it works out what you just said; the bob and the swing of the
+       collar tag are what stop a drawn face from looking like a sticker. */
+    const wob = still ? 0 : 1;
+    const tiltAim = ((this.state === 'listening' ? 0.20 : this.state === 'thinking' ? 0.12 : 0)
+      + wob * 0.05 * Math.sin(this.t * 0.62)) * this.pup;
+    this.tilt = still ? tiltAim : approach(this.tilt, tiltAim, 0.30, dt);
+    this.bob = wob * this.pup * 0.011 * Math.sin(this.t * 1.15 + 0.7) * (1 + 0.5 * this.intensity);
+    this.tagSwing = wob * this.pup * (0.26 * Math.sin(this.t * 1.55 + 1.1) + 0.9 * this.impulse * Math.sin(this.t * 7.3));
+    const perk = 0.34 * this.impulse + 0.10 * this.v.open;
+    this.ear[0] = this.pup * (wob * 0.085 * Math.sin(this.t * 2.15) + perk);
+    this.ear[1] = this.pup * (wob * 0.085 * Math.sin(this.t * 1.72 + 2.0) + perk);
+
     /* rotation. spin drives everything; acting quantises it into detents with a
-       spring so each step lands with a mechanical overshoot; alert locks it. */
-    const spin = this.v.spin;
+       spring so each step lands with a mechanical overshoot; alert locks it.
+       The companion turns more slowly: same machine, gentler about it. */
+    const spin = this.v.spin * (1 - 0.55 * clamp(this.pup, 0, 1));
     const act = this.v.act;
     for (let i = 0; i < 8; i++) {
       if (!still) this.ringCont[i] += RING_SPEED[i] * spin * dt * (1 + 0.35 * this.intensity);
@@ -904,15 +1166,25 @@ class Model {
     const intensity = clamp(this.intensity + this.impulse * 0.5, 0, 1);
     const gain = v.gain * (1 + 0.30 * strobe + 0.22 * this.impulse) * (0.92 + 0.16 * intensity);
     const ln = Math.hypot(this.look[0], this.look[1]) || 1;
+    /* Companion: the head has to be the subject, so the core grows and the
+       inner rings stand down to a trace. They are still drawn — the machine is
+       meant to be visible underneath the creature, not replaced by it. */
+    const pup = clamp(this.pup, 0, 1.18);
+    const pc = clamp(pup, 0, 1);
+    for (let i = 0; i < 8; i++) this.ringGainOut[i] = this.ringGain[i] * lerp(1, PUP_RING[i], pc);
+    const cdeep = this.theme.companion ? this.theme.companion.deep : this.theme.deep;
+    for (let i = 0; i < 3; i++) this.deepOut[i] = lerp(this.theme.deep[i], cdeep[i], pc);
     return {
       time: still ? 4.0 : this.t,
-      colA: this.colA, colB: this.colB, colDeep: this.theme.deep,
-      core: v.core, iris: v.iris, spread: v.spread, open: v.open,
+      colA: this.colA, colB: this.colB, colDeep: this.deepOut,
+      core: v.core * lerp(1, 1.58, pc), iris: v.iris, spread: v.spread, open: v.open,
       think: v.think, speak: v.speak, act: v.act, hazard: haz,
-      intensity, breath: still ? 0 : v.breath, gain,
+      intensity, breath: still ? 0 : Math.max(v.breath, 0.5 * pc), gain,
+      pup, pupPose: [this.tilt, this.bob, this.tagSwing], pupEar: this.ear,
+      persona: this.persona,
       look: [this.look[0] / ln * this.lookStrength, this.look[1] / ln * this.lookStrength],
       coreRot: this.coreRot, irisRot: this.irisRot, spin: v.spin,
-      ringRot: this.ringRot, ringGain: this.ringGain,
+      ringRot: this.ringRot, ringGain: this.ringGainOut,
       levelSeg: Math.round(clamp(intensity, 0, 1) * 24),
       motes: v.motes, flow: v.flow,
       detail, minW,
@@ -1018,6 +1290,9 @@ class GLRenderer {
     gl.uniform1i(s.u.uLevelSeg, u.levelSeg);
     gl.uniform1f(s.u.uMinW, u.minW);
     gl.uniform1f(s.u.uDetail, u.detail);
+    gl.uniform1f(s.u.uPup, u.pup);
+    gl.uniform3fv(s.u.uPupPose, u.pupPose);
+    gl.uniform2fv(s.u.uPupEar, u.pupEar);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     /* ---- pass 2: filaments, additive ---- */
@@ -1288,15 +1563,41 @@ class C2DRenderer {
       ctx.closePath(); ctx.stroke();
     }
 
-    /* core: lattice suggestion, shell, iris blades, nucleus */
+    /* core: lattice suggestion, shell, iris blades, nucleus.
+       Same morph as the GL path and driven by the same numbers: the head is a
+       polar profile that is a circle at pup 0, the two eyes start life on top
+       of each other at the aperture radius. Quieter, not different. */
+    const pup = clamp(u.pup || 0, 0, 1.18);
+    const pc = Math.min(pup, 1);
+    const ear = u.pupEar || [0, 0];
+    const prof = (a) => (pup < 0.001 ? 1 : lerp(1, 1
+      + 0.070 * Math.cos(2 * a)
+      - 0.090 * Math.max(0, -Math.sin(a))
+      + pupEarC(a, 1.02, 0.30, 0.80 + ear[0])
+      + pupEarC(a, Math.PI - 1.02, 0.30, 0.80 + ear[1]), pup));
+    /* canvas y runs down, the model's y runs up: negate once, here. */
+    const headPath = (scale) => {
+      ctx.beginPath();
+      for (let i = 0; i <= 128; i++) {
+        const a = (i / 128) * Math.PI * 2;
+        const R = cr * scale * prof(a);
+        const x = Math.cos(a) * R, y = -Math.sin(a) * R;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    };
+
+    ctx.save();
+    if (pup > 0.001) { ctx.translate(0, -(u.pupPose ? u.pupPose[1] : 0)); ctx.rotate(u.pupPose ? u.pupPose[0] : 0); }
+
     const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, cr);
     coreGrad.addColorStop(0, rgb(B, 0.30));
     coreGrad.addColorStop(1, rgb(A, 0.06));
     ctx.fillStyle = coreGrad;
-    ctx.beginPath(); ctx.arc(0, 0, cr, 0, Math.PI * 2); ctx.fill();
+    headPath(1); ctx.fill();
 
     ctx.lineWidth = Math.max(0.003, px * 1.1);
-    ctx.strokeStyle = rgb(mixc(A, B, 0.5), 0.32 + 0.5 * u.think);
+    ctx.strokeStyle = rgb(mixc(A, B, 0.5), (0.32 + 0.5 * u.think) * (1 - 0.5 * pc));
     for (let k = 0; k < 6; k++) {
       const a = (k / 6) * Math.PI * 2 + u.coreRot;
       ctx.beginPath();
@@ -1312,43 +1613,168 @@ class C2DRenderer {
 
     ctx.lineWidth = Math.max(0.0045, px * 1.4);
     ctx.strokeStyle = rgb(mixc(B, [1, 1, 1], 0.3), 0.9);
-    ctx.beginPath(); ctx.arc(0, 0, cr, 0, Math.PI * 2); ctx.stroke();
+    headPath(1); ctx.stroke();
 
-    /* iris: cover the lattice outside the aperture with the deep colour */
+    /* the aperture: one iris, or two eyes at the same radius pulling apart */
     const apr = cr * (0.1 + 0.74 * u.iris);
+    const lidH = lerp(0.20, 1, Math.sqrt(clamp(u.iris, 0, 1)));
+    const eyeR = lerp(apr, cr * 0.315, pc);
+    const eyeSy = lerp(1, lidH, pc);
+    const ex = 0.42 * cr * pc, ey = -0.20 * cr * pc;   // canvas y is down
+    const eyes = [[-ex, ey], [ex, ey]];
+    const eyePath = (r, sy) => {
+      for (const [cx, cy] of eyes) {
+        ctx.moveTo(cx + r, cy);
+        ctx.ellipse(cx, cy, r, r * sy, 0, 0, Math.PI * 2, true);
+      }
+    };
+
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = rgb(u.colDeep, 0.72);
+    ctx.fillStyle = rgb(u.colDeep, 0.72 * (1 - 0.35 * pc));
     ctx.beginPath();
-    ctx.arc(0, 0, cr * 0.995, 0, Math.PI * 2);
-    ctx.arc(0, 0, apr, 0, Math.PI * 2, true);
-    ctx.fill();
+    headPath(0.995);
+    eyePath(eyeR, eyeSy);
+    ctx.fill('evenodd');
     ctx.globalCompositeOperation = 'lighter';
 
-    ctx.lineWidth = Math.max(0.003, px);
-    ctx.strokeStyle = rgb(B, 0.35);
-    for (let k = 0; k < 8; k++) {
-      const a = (k / 8) * Math.PI * 2 + u.irisRot;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * apr, Math.sin(a) * apr);
-      ctx.lineTo(Math.cos(a) * cr, Math.sin(a) * cr);
-      ctx.stroke();
+    if (pup < 0.995) {
+      ctx.lineWidth = Math.max(0.003, px);
+      ctx.strokeStyle = rgb(B, 0.35 * (1 - pc));
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2 + u.irisRot;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * apr, Math.sin(a) * apr);
+        ctx.lineTo(Math.cos(a) * cr, Math.sin(a) * cr);
+        ctx.stroke();
+      }
     }
     ctx.lineWidth = Math.max(0.004, px * 1.3);
     ctx.strokeStyle = rgb(mixc(B, [1, 1, 1], 0.45), 0.95);
-    ctx.beginPath(); ctx.arc(0, 0, apr, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); eyePath(eyeR, eyeSy); ctx.stroke();
 
-    const nucleus = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(apr, 0.02) * 1.6);
-    nucleus.addColorStop(0, rgb([1, 1, 1], 0.85 * (0.6 + 0.5 * u.intensity)));
-    nucleus.addColorStop(0.4, rgb(mixc(B, [1, 1, 1], 0.5), 0.5));
-    nucleus.addColorStop(1, rgb(A, 0));
-    ctx.fillStyle = nucleus;
-    ctx.beginPath(); ctx.arc(0, 0, Math.max(apr, 0.02) * 1.6, 0, Math.PI * 2); ctx.fill();
+    if (pc < 0.995) {
+      const nucleus = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(apr, 0.02) * 1.6);
+      nucleus.addColorStop(0, rgb([1, 1, 1], 0.85 * (0.6 + 0.5 * u.intensity) * (1 - pc)));
+      nucleus.addColorStop(0.4, rgb(mixc(B, [1, 1, 1], 0.5), 0.5 * (1 - pc)));
+      nucleus.addColorStop(1, rgb(A, 0));
+      ctx.fillStyle = nucleus;
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(apr, 0.02) * 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+
+    if (pup > 0.004) this._companion(ctx, u, cr, px, pc, eyes, eyeR, eyeSy, lidH, prof, rgb, A, B);
+    ctx.restore();
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = 'source-over';
   }
+
+  /** Pupils, nose, mouth, collar and badge — the parts that only exist for the
+   *  companion. Kept out of draw() so the default path stays the shape it was. */
+  _companion(ctx, u, cr, px, pc, eyes, eyeR, eyeSy, lidH, prof, rgb, A, B) {
+    const gaze = [clamp(u.look[0] * 1.8, -1, 1), clamp(-u.look[1] * 1.8, -1, 1)];
+
+    /* inner ear */
+    ctx.globalAlpha = 0.5 * pc;
+    ctx.strokeStyle = rgb(mixc(B, A, 0.25), 0.9);
+    ctx.lineWidth = Math.max(0.010, px * 3);
+    for (const c of [1.02, Math.PI - 1.02]) {
+      ctx.beginPath();
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12;
+        const R = cr * lerp(1.06, 1.42, t) ;
+        const x = Math.cos(c) * R, y = -Math.sin(c) * R;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    /* pupils and catchlights */
+    for (const [cx, cy] of eyes) {
+      const pr = eyeR * lerp(0.70, 0.46, lidH);
+      const px0 = cx + gaze[0] * eyeR * 0.26;
+      const py0 = cy + gaze[1] * eyeR * 0.26;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = rgb(u.colDeep, 0.9 * pc);
+      ctx.beginPath(); ctx.ellipse(px0, py0, pr, pr * eyeSy, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = rgb(B, 0.95 * pc);
+      ctx.lineWidth = Math.max(0.004, px * 1.2);
+      ctx.beginPath(); ctx.ellipse(px0, py0, pr, pr * eyeSy, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = rgb([1, 1, 1], 0.95 * pc);
+      ctx.beginPath(); ctx.arc(px0 - eyeR * 0.30, py0 - eyeR * 0.34, eyeR * 0.17, 0, Math.PI * 2); ctx.fill();
+    }
+
+    ctx.globalAlpha = pc;
+    ctx.lineWidth = Math.max(0.004, px * 1.3);
+
+    /* muzzle, nose, mouth */
+    ctx.strokeStyle = rgb(mixc(B, A, 0.4), 0.5);
+    ctx.beginPath(); ctx.ellipse(0, cr * 0.34, cr * 0.55, cr * 0.40, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = rgb(B, 0.85);
+    ctx.beginPath(); ctx.ellipse(0, cr * 0.26, cr * 0.17, cr * 0.115, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = rgb(mixc(B, A, 0.4), 0.8);
+    ctx.beginPath();
+    ctx.moveTo(0, cr * 0.32); ctx.lineTo(0, cr * 0.50);
+    ctx.stroke();
+    const gape = (0.030 + 0.20 * u.intensity) * u.speak;
+    ctx.strokeStyle = rgb(mixc(B, [1, 1, 1], 0.2), 0.85);
+    for (const sgn of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(sgn * cr * 0.145, cr * (0.50 + gape * 0.45), cr * 0.155, 0.15 * Math.PI, 0.9 * Math.PI);
+      ctx.stroke();
+    }
+    if (gape > 0.02) {
+      ctx.fillStyle = rgb(u.colDeep, 0.9);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.beginPath(); ctx.ellipse(0, cr * (0.56 + gape * 0.5), cr * 0.30, cr * Math.max(gape, 0.03) * 1.1, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+    }
+
+    /* collar and the badge that hangs off it */
+    const colR = cr * 1.14;
+    ctx.strokeStyle = rgb(mixc(A, B, 0.65), 0.7);
+    ctx.lineWidth = Math.max(0.02, cr * 0.17);
+    ctx.beginPath(); ctx.arc(0, 0, colR, 0.20 * Math.PI, 0.80 * Math.PI); ctx.stroke();
+
+    const sw = u.pupPose ? u.pupPose[2] : 0;
+    ctx.save();
+    ctx.translate(0, colR + cr * 0.20);
+    ctx.rotate(sw);
+    const tr = cr * 0.215;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = rgb(u.colDeep, 0.85 * pc);
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = -Math.PI / 2 + (i / 6) * Math.PI * 2;
+      const x = Math.cos(a) * tr, y = Math.sin(a) * tr;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = rgb(B, 0.95);
+    ctx.lineWidth = Math.max(0.004, px * 1.4);
+    ctx.stroke();
+    ctx.fillStyle = rgb(mixc(B, [1, 1, 1], 0.25), 0.9);
+    ctx.beginPath(); ctx.ellipse(0, tr * 0.20, tr * 0.31, tr * 0.31, 0, 0, Math.PI * 2); ctx.fill();
+    for (let j = 0; j < 4; j++) {
+      const ta = lerp(2.42, 0.72, j / 3);
+      ctx.beginPath();
+      ctx.arc(Math.cos(ta) * tr * 0.56, -Math.sin(ta) * tr * 0.56, tr * 0.145, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
   destroy() {}
 }
+
+/** The companion's ear, in the shape the shader uses. */
+const pupEarC = (a, c, w, h) => {
+  const d = Math.abs(((a - c + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI);
+  const t = Math.max(0, 1 - d / w);
+  return h * t * t * (2 - t);
+};
 
 const frac = (x) => { const v = Math.sin(x) * 43758.5453; return v - Math.floor(v); };
 const smooth01 = (x) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
@@ -1405,6 +1831,7 @@ export class ArsEntity {
        state is exposed as data-state for CSS and for tests. */
     this.canvas.setAttribute('aria-hidden', 'true');
     this.canvas.dataset.state = 'idle';
+    this.canvas.dataset.persona = 'default';
 
     this.theme = readTheme(document.documentElement);
     this.model = new Model(this.theme);
@@ -1509,6 +1936,18 @@ export class ArsEntity {
     this._kick();
   }
 
+  /** Who it is being. 'companion' is the form for the child: same six states,
+   *  same API, same rings — a warmer palette and a different body. The change
+   *  takes about a second and is a real morph, so you can see it happen. */
+  setPersona(persona) {
+    if (this.destroyed) return;
+    this.model.setPersona(persona);
+    this.canvas.dataset.persona = this.model.persona;
+    this._kick();
+  }
+
+  get persona() { return this.model.persona; }
+
   /** A single visible beat — use it for "message received", "tool finished". */
   pulse(strength = 1) {
     if (this.destroyed) return;
@@ -1557,6 +1996,8 @@ export class ArsEntity {
       css: [this.cssW, this.cssH],
       detail: Math.round(this.detail * 100) / 100,
       state: this.model.state,
+      persona: this.model.persona,
+      pup: Math.round(this.model.pup * 100) / 100,
       tier: this.model.tier,
       intensity: Math.round(this.model.intensity * 100) / 100,
       reducedMotion: this.still,

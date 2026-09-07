@@ -173,6 +173,12 @@ export class ArsEntityFallback {
     this._tier = tierLabel;
     this.root.dataset.tier = tierLabel ? tierLabel.replace(/\s+/g, '-') : '';
   }
+  // The text fallback cannot change shape, but it must not throw when asked to:
+  // app.js calls setPersona on whatever entity it got.
+  setPersona(persona) {
+    this._persona = persona === 'companion' ? 'companion' : 'default';
+    this.root.dataset.persona = this._persona;
+  }
   destroy() {
     this.root.remove();
   }

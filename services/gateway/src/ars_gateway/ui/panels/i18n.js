@@ -63,6 +63,26 @@ const STRINGS = {
     en: 'Commands: /brain /docs /grants /audit /status /clear /lang ro|en|de /escalate',
     ro: 'Comenzi: /brain /docs /grants /audit /status /clear /lang ro|en|de /escalate', de: 'Befehle: /brain /docs /grants /audit /status /clear /lang ro|en|de /escalate' },
 
+  // persona — the being changes shape for a turn that is about the child, and
+  // says so. {reason} is the gateway's own short explanation and arrives as
+  // written by the server; everything around it is translated by hand here.
+  'persona.companion': {
+    en: 'A.R.S has changed into its companion form — same A.R.S, talking to a child.',
+    ro: 'A.R.S a trecut în forma de însoțitor — același A.R.S, vorbind cu un copil.',
+    de: 'A.R.S hat in seine Begleiter-Form gewechselt — derselbe A.R.S, im Gespräch mit einem Kind.' },
+  'persona.companion_because': {
+    en: 'A.R.S has changed into its companion form — {reason}.',
+    ro: 'A.R.S a trecut în forma de însoțitor — {reason}.',
+    de: 'A.R.S hat in seine Begleiter-Form gewechselt — {reason}.' },
+  'persona.default': {
+    en: 'A.R.S is back to its usual form.',
+    ro: 'A.R.S a revenit la forma obișnuită.',
+    de: 'A.R.S ist wieder in seiner gewohnten Form.' },
+  'persona.default_because': {
+    en: 'A.R.S is back to its usual form — {reason}.',
+    ro: 'A.R.S a revenit la forma obișnuită — {reason}.',
+    de: 'A.R.S ist wieder in seiner gewohnten Form — {reason}.' },
+
   // tiers
   'tier.recall': { en: 'recall', ro: 'reamintire', de: 'Erinnerung' },
   'tier.documents': { en: 'documents', ro: 'documente', de: 'Dokumente' },

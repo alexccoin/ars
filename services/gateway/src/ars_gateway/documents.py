@@ -281,9 +281,24 @@ class DocumentLibrary:
     async def learn(self, name: str, data: bytes) -> LearnedDocument:
         return await self.store(self.parse(name, data))
 
+    def already_learned(self, digest: str) -> LearnedDocument | None:
+        """The document with this content, if A.R.S already has it."""
+        return next((d for d in self.docs.values() if d.sha256 and d.sha256 == digest), None)
+
     async def store(self, parsed: ParsedDocument) -> LearnedDocument:
         name, pieces, pages = parsed.name, parsed.pieces, parsed.pages
         text, language, digest = parsed.text, parsed.language, parsed.sha256
+
+        # The same bytes are the same document. The digest was computed and then ignored,
+        # so re-uploading a file — or re-running an importer after it failed halfway —
+        # created a second complete copy: twice the passages, twice the translations, and
+        # a retrieval that now has two identical top hits. The ambiguity rule then refuses
+        # to answer at all, because it cannot tell a passage from its own duplicate. Three
+        # copies of four folk tales is how this was found.
+        existing = self.already_learned(digest)
+        if existing is not None:
+            log.info("%s is already learned as %s", name, existing.name)
+            return existing
         doc_id = new_id("doc")
         ids: list[str] = []
         for index, piece in enumerate(pieces):
