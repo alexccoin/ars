@@ -26,7 +26,8 @@ from ars_core import ArsConfig
 from ars_memory.config import MemoryConfig
 from ars_memory.store import SqliteMemoryStore
 from ars_protocol import (
-    Capability, CapabilityGrant, ConfirmPolicy, Device, GrantSource, Language, Session,
+    Capability,
+    MemoryKind, CapabilityGrant, ConfirmPolicy, Device, GrantSource, Language, Session,
     Transcript,
 )
 from ars_skills import GitHubSkill, InProcessSkillRuntime, WebSkill
@@ -433,6 +434,62 @@ async def status() -> dict:
             # (raw cosine), tier 1 asks whether a passage answers one (calibrated).
             "recall_cosine": ars.brain.config.recall_cosine,
             "documents": ars.brain.config.document_threshold,
+        },
+    }
+
+
+# ------------------------------------------------------------------------ knowledge
+
+@app.get("/api/knowledge")
+async def knowledge() -> dict:
+    """Everything A.R.S knows, as a graph.
+
+    Not a debug endpoint. A private assistant that learns from your files is asking for
+    a lot of trust, and "what does it actually know about me" should be answerable by
+    looking rather than by reading a database. Every node here is something the user put
+    in or something A.R.S derived from it, and the edges say which.
+    """
+    records = await ars.memory.all_records()
+    docs = {d["id"]: d for d in ars.library.catalogue()} if ars.library else {}
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    for doc_id, doc in docs.items():
+        nodes.append({"id": doc_id, "kind": "document", "label": doc["name"],
+                      "weight": max(doc["chunks"], 1), "language": None})
+
+    for record in records:
+        uri = record.provenance.uri or ""
+        parent = uri[len("doc:"):].split("#")[0] if uri.startswith("doc:") else None
+        kind = "fact" if record.kind is MemoryKind.FACT else "passage"
+        label = record.text.split("\n", 1)[0][:70]
+        if kind == "fact" and label.startswith("Q: "):
+            label = label[3:]
+        nodes.append({
+            "id": record.id, "kind": kind, "label": label,
+            "language": record.language.value, "weight": 1,
+            "derived": record.origin_id is not None,
+        })
+        if parent and parent in docs:
+            edges.append({"from": parent, "to": record.id, "kind": "contains"})
+        if record.origin_id:
+            # A translation is drawn as an edge, not a second document: it is the same
+            # passage wearing another language.
+            edges.append({"from": record.origin_id, "to": record.id, "kind": "translation"})
+
+    by_language: dict[str, int] = {}
+    for record in records:
+        by_language[record.language.value] = by_language.get(record.language.value, 0) + 1
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "summary": {
+            "documents": len(docs),
+            "passages": sum(1 for n in nodes if n["kind"] == "passage"),
+            "facts": sum(1 for n in nodes if n["kind"] == "fact"),
+            "translations": sum(1 for e in edges if e["kind"] == "translation"),
+            "by_language": by_language,
         },
     }
 

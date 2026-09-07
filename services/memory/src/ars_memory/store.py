@@ -222,6 +222,17 @@ class SqliteMemoryStore(MemoryStore):
         )
         return tuple(self._row_to_record(row) for row in rows)
 
+    async def all_records(self, limit: int = 2000) -> tuple[MemoryRecord, ...]:
+        """Every live record, newest first. For showing the user what is in here.
+
+        Bounded, because this is rendered: a store with fifty thousand chunks should draw
+        the most recent two thousand rather than freeze a browser trying to draw them all.
+        """
+        rows = await self._fetch_rows_where(
+            "superseded_by IS NULL ORDER BY created_at_ms DESC LIMIT ?", (limit,)
+        )
+        return tuple(self._row_to_record(row) for row in rows)
+
     async def get(self, record_id: str) -> MemoryRecord | None:
         """One record by id, or None. Superseded records come back: a caller that asked
         for a specific id wants that id, not the store's opinion of what replaced it."""
