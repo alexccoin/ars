@@ -360,3 +360,72 @@ async def test_learning_skips_a_greeting_entirely() -> None:
 
     assert len(memory.remembered) == 1
     assert memory.remembered[0].text.startswith("Q: What is the annual paid leave?")
+
+
+# ------------------------------------------- a shared place name is not an answer
+
+LEASE = (
+    "CONTRACT DE ÎNCHIRIERE — Strada Republicii 42, Cluj-Napoca\n"
+    "Chiria pe lună este de 4.200 lei, plătibilă până în data de 5 a fiecărei luni.\n"
+    "Garanția este de două chirii, adică 8.400 lei."
+)
+CONTRACT = (
+    "CONTRACT INDIVIDUAL DE MUNCĂ — Inginer de sisteme senior\n"
+    "Angajarea începe la 1 aprilie 2026, la biroul din Cluj-Napoca.\n"
+    "Salariul net lunar este de 9.500 lei."
+)
+
+
+def _two_documents(cosine: float, first: str = CONTRACT) -> _FakeMemory:
+    second = LEASE if first is CONTRACT else CONTRACT
+    return _FakeMemory([
+        Scored(rank=cosine, cosine=cosine, record=_memory(first, MemoryKind.DOCUMENT,
+                                                          label="employment.txt")),
+        Scored(rank=cosine - 0.06, cosine=cosine - 0.06,
+               record=_memory(second, MemoryKind.DOCUMENT, label="lease.txt")),
+    ])
+
+
+@pytest.mark.asyncio
+async def test_a_weather_question_is_not_answered_by_a_contract() -> None:
+    """Measured against Alex's real store: "cum e vremea la Cluj?" scored 0.830 against an
+    employment contract, and "What is the annual paid leave?" scored 0.831 against the
+    contract that answers it. One thousandth apart, because both name Cluj and in a
+    compressed multilingual space a shared proper noun is most of the signal. He asked
+    about the weather and was shown his salary, at 99% match, in 23 ms."""
+    brain = TieredBrain(memory=_two_documents(0.865))
+
+    assert await brain.try_cheap_tiers("cum e vremea la Cluj?", language=Language.RO) is None
+
+
+@pytest.mark.asyncio
+async def test_a_question_the_document_does_answer_still_works() -> None:
+    """The same cosine, the same documents — only the question differs, and it differs in
+    the one way the embedding could not see."""
+    brain = TieredBrain(memory=_two_documents(0.865))
+
+    answer = await brain.try_cheap_tiers("Cât este salariul net lunar?", language=Language.RO)
+
+    assert answer is not None
+    assert answer.tier is Tier.DOCUMENTS
+
+
+@pytest.mark.asyncio
+async def test_the_rule_survives_diacritics() -> None:
+    """The stop-word list is ASCII, so without folding "cât" was never recognised as
+    question scaffolding, appeared in no document, and was therefore chosen as the
+    question's most distinctive word — rejecting every Romanian question for failing to
+    find "cât" in its own answer."""
+    brain = TieredBrain(memory=_two_documents(0.865, first=LEASE))
+
+    assert await brain.try_cheap_tiers("Cât este chiria pe lună?", language=Language.RO) is not None
+
+
+def test_the_distinctive_word_is_the_rarest_one() -> None:
+    from ars_gateway.brain import distinctive_word_present
+
+    both = [LEASE, CONTRACT]
+    # "Cluj" is in both, so it carries little; "salariul" is in one, so it decides.
+    assert distinctive_word_present("Cât este salariul net lunar?", CONTRACT, both)
+    assert not distinctive_word_present("cum e vremea la Cluj?", CONTRACT, both)
+    assert not distinctive_word_present("wie ist das Wetter in Cluj", CONTRACT, both)

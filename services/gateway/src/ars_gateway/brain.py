@@ -22,7 +22,9 @@ feedback loop is what actually tunes the threshold — not the number we guessed
 from __future__ import annotations
 
 import re
+import unicodedata
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
 
@@ -266,6 +268,15 @@ sind war waren bin bist ich du er sie es wir ihr mich dich uns euch mir dir nich
 ja nein danke bitte hallo tschuss guten morgen abend nacht was wann wo warum wie wer
 """.split())
 
+_STOPWORDS = _STOPWORDS | frozenset("""
+cat cata cate cati cand cine care cum unde incat oare
+viel viele wieviel hoch lange oft weit teuer gross gross
+much many long often far cost costs
+""".split())
+"""Interrogatives and quantifiers, folded. "How much", "cât este" and "wie hoch" are the
+scaffolding of a question, not its subject — and a question's subject is what has to be
+found in the passage that claims to answer it."""
+
 MIN_CACHEABLE_CONTENT_WORDS = 2
 """Two words that are not stop words. One is not enough: "who created you" reduces to
 {created} and "how are you" reduces to {} — but so does "thanks", and the difference
@@ -286,6 +297,61 @@ def worth_caching(question: str) -> bool:
     # One content word can still be a real question if the question is not a fragment:
     # "who created you" and "what is escrow" are worth keeping; "thanks" is not.
     return len(content) == 1 and len(words) >= 3
+
+
+def distinctive_word_present(question: str, passage: str, others: Sequence[str]) -> bool:
+    """Does the passage contain the most distinctive word of the question?
+
+    The embedding cannot answer this. Measured against a real store: "cum e vremea la
+    Cluj?" scores 0.830 against an employment contract, and "What is the annual paid
+    leave?" scores 0.831 against the contract that answers it. Separation of one
+    thousandth — because both questions name Cluj, and in a compressed multilingual space
+    a shared proper noun is most of the signal. The tier answered a weather question with
+    a salary.
+
+    So a second, independent test. Of the question's content words, take the one that
+    appears in the FEWEST of the candidate passages — the one carrying the most
+    information about what was actually asked — and require the chosen passage to contain
+    it. "vremea" appears in no contract, so no contract may answer a question about it, at
+    any cosine. "salariul" appears in one, and that one may answer.
+
+    Deliberately literal: it costs a paraphrase that shares no vocabulary with its own
+    document, which then goes to the model and is answered correctly a few seconds later.
+    That is the cheap direction of this error.
+    """
+    words = _content_words(question)
+    if not words:
+        return False
+    haystacks = [_fold_text(p) for p in others]
+    top = _fold_text(passage)
+    # Document frequency across the candidates, so "Cluj" in every contract counts for
+    # little and "Kaution" in one counts for a lot.
+    frequency = {w: sum(w in h for h in haystacks) for w in words}
+    rarest = min(words, key=lambda w: (frequency[w], -len(w)))
+    return rarest in top
+
+
+def _fold(word: str) -> str:
+    """Strip diacritics for matching. `cât` and `cat`, `Kaution` and `kaution`.
+
+    Without this the stop-word list — written in ASCII — never matched a Romanian or
+    German question word, so `cât` survived as a "content" word, appeared in no document,
+    and was therefore chosen as the question's most distinctive term. Every Romanian
+    question was then rejected for not finding `cât` in its own answer.
+    """
+    return "".join(
+        c for c in unicodedata.normalize("NFD", word.lower())
+        if unicodedata.category(c) != "Mn"
+    ).replace("ß", "ss")
+
+
+def _fold_text(text: str) -> str:
+    return " ".join(_fold(w) for w in re.findall(r"\w+", text))
+
+
+def _content_words(text: str) -> list[str]:
+    return [f for w in re.findall(r"\w+", text)
+            if len(f := _fold(w)) > 2 and f not in _STOPWORDS]
 
 
 class TieredBrain:
@@ -381,6 +447,13 @@ class TieredBrain:
             # Two passages score alike. Either they disagree or they cover different
             # matters that sound similar; picking one is how retrieval produces confident
             # nonsense. That is a question for the model.
+            return None
+
+        if not distinctive_word_present(
+            question, top.text, [record.text for _s, _c, record in scored]
+        ):
+            # The passage scores well but does not contain the thing that was asked
+            # about. A shared place name is not an answer.
             return None
 
         cite = (top.provenance.label or top.provenance.uri or "your documents")

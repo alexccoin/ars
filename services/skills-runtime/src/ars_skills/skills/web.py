@@ -6,6 +6,8 @@ which taints the turn and stops the guard from silently letting the model act on
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 import urllib.robotparser
 from typing import Any
@@ -29,6 +31,20 @@ from selectolax.parser import HTMLParser
 from ..base import Skill, SkillError
 from ..context import MediatedHttp, SkillContext, external
 
+READ_TOP = 2
+"""How many search results to fetch and read automatically.
+
+Two, not one: the first result is often a hub page ("NY weather forecast, live radar")
+whose text carries no number, and not five, because each fetch is a second of latency and
+the answer is usually in the first or second."""
+
+READ_TOTAL_CHARS = 8_000
+"""Total budget across every page read for one search, on top of the snippets. Generous
+enough for two articles, small enough that a search cannot push the user's own question
+out of the context window."""
+
+log = logging.getLogger("ars.skills.web")
+
 MAX_CHARS = 12_000
 """Hard cap on text returned to the model per page. An attacker's first move is a huge
 page that pushes the user's actual request out of the context window."""
@@ -45,6 +61,16 @@ _INJECTION_PATTERNS = [
         r"noi instrucțiuni",
     )
 ]
+
+
+def _clean(text: str) -> str:
+    """Collapse the whitespace a search page's markup leaves behind.
+
+    Query terms come wrapped in <b>, and joining the nodes without a separator produces
+    "latestweatherforecast" — which is what the model was being asked to read. Joining
+    WITH a separator then collapsing runs gives back the sentence.
+    """
+    return " ".join(text.split())
 
 
 def unwrap_redirect(url: str) -> str:
@@ -117,8 +143,15 @@ class WebSkill(Skill):
                 ToolSpec(
                     name="web_search",
                     description="Search the web for current information. Returns titles, "
-                                "URLs and snippets — not full pages.",
-                    capabilities=(Capability.WEB_SEARCH,),
+                                "URLs and short snippets — not the pages themselves. A "
+                                "snippet says where an answer might be, not what it is: "
+                                "for anything that changes (prices, scores, weather, "
+                                "today's news) follow up with web_read on the best result "
+                                "and answer from the page.",
+                    # WEB_FETCH as well as WEB_SEARCH: this tool now reads the top
+                    # results itself, and a tool that fetches pages without declaring the
+                    # capability that gates fetching would be doing it behind the guard.
+                    capabilities=(Capability.WEB_SEARCH, Capability.WEB_FETCH),
                     returns_external_content=True,
                     params=(
                         ToolParam(name="query", type="string", description="What to search for"),
@@ -179,7 +212,51 @@ class WebSkill(Skill):
             text = f"{title}\n{url}\n{snippet}"
             prov = external(SourceKind.WEB_SEARCH_RESULT, url, label=title[:60] or url)
             blocks.append((text, prov))
+
+        blocks.extend(await self._read_top(rows, ctx, how_many=int(args.get("read", READ_TOP))))
         return blocks
+
+    async def _read_top(self, rows: list[tuple[str, str, str]], ctx: SkillContext,
+                        *, how_many: int) -> list[tuple[str, Provenance]]:
+        """Fetch the first few results and return their text alongside the snippets.
+
+        A search used to return titles, URLs and snippets and stop there. A snippet says
+        where an answer might be, not what it is — ask for the temperature in New York and
+        every snippet says "get the latest hourly weather updates", which is not a
+        temperature. The model then did the only honest thing available to it and told the
+        user to go and look at a website themselves.
+
+        The prompt now tells it to follow up with `web_read`, and that helps, but it is not
+        enough on its own: a 14B model asked for the temperature announced "I'll check the
+        most relevant source" and then simply stopped, having narrated the tool call
+        instead of making it. Waiting for a smaller model to become more obedient is not a
+        plan. The search brings the page back itself.
+
+        Failures here are silent on purpose. A page that 404s, blocks robots, or times out
+        costs this search nothing — the snippets are already in hand, and a search that
+        fails because the third result was slow would be a worse assistant than one that
+        answers from the first two.
+        """
+        if how_many <= 0:
+            return []
+        out: list[tuple[str, Provenance]] = []
+        budget = READ_TOTAL_CHARS
+        for _title, url, _snippet in rows[:how_many]:
+            if budget <= 0:
+                break
+            try:
+                ctx.check_cancelled()
+                read = await self._read({"url": url}, ctx)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.info("search could not read %s: %s", url, exc)
+                continue
+            for text, prov in read:
+                clipped = text[:budget]
+                budget -= len(clipped)
+                out.append((clipped, prov))
+        return out
 
     async def _ddg_fallback(self, query: str, count: int) -> list[tuple[str, str, str]]:
         """No API key configured — A.R.S degrades, it does not break.
@@ -199,15 +276,28 @@ class WebSkill(Skill):
                 a = node.css_first("a.result__a")
                 sn = node.css_first(".result__snippet")
                 if a is not None:
-                    out.append((a.text(strip=True), a.attributes.get("href", "") or "",
-                                sn.text(strip=True) if sn else ""))
+                    out.append((_clean(a.text(separator=" ")),
+                                a.attributes.get("href", "") or "",
+                                _clean(sn.text(separator=" ")) if sn else ""))
             if out:
                 return [(t, unwrap_redirect(u), sn) for t, u, sn in out]
 
             resp = await client.post("https://lite.duckduckgo.com/lite/", data={"q": query})
             tree = HTMLParser(resp.text)
-            for a in tree.css("a.result-link")[:count]:
-                out.append((a.text(strip=True), a.attributes.get("href", "") or "", ""))
+            links = tree.css("a.result-link")
+            # The snippets live in their own cells, in the same order as the links. They
+            # were being dropped: this branch used to append "" for every one of them,
+            # which is why a search came back as a bare list of titles and URLs and the
+            # model — correctly — said it could not answer from links. The html.
+            # duckduckgo.com branch above now returns 202 with no results at all, so this
+            # is not a rare fallback any more; it is the path every search takes.
+            snippets = [_clean(n.text(separator=" ")) for n in tree.css(".result-snippet")]
+            for i, a in enumerate(links[:count]):
+                out.append((
+                    _clean(a.text(separator=" ")),
+                    a.attributes.get("href", "") or "",
+                    snippets[i] if i < len(snippets) else "",
+                ))
             return [(t, unwrap_redirect(u), sn) for t, u, sn in out]
         finally:
             await client.aclose()

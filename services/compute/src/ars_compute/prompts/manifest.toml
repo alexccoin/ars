@@ -139,3 +139,23 @@ id = "system"
 version = "v2"
 language = "de"
 path = "system.de.v2.md"
+
+# tool_use v2: v1 stopped after a search and handed the user a list of links. The rule
+# that a search result is a place to look, not an answer, is added rather than implied.
+[[asset]]
+id = "tool_use"
+version = "v2"
+language = "en"
+path = "tool_use.en.v2.md"
+
+[[asset]]
+id = "tool_use"
+version = "v2"
+language = "ro"
+path = "tool_use.ro.v2.md"
+
+[[asset]]
+id = "tool_use"
+version = "v2"
+language = "de"
+path = "tool_use.de.v2.md"
