@@ -29,6 +29,8 @@ the order things go under pressure, first to last. It is a constant, not a heuri
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import hashlib
 import re
 import time
@@ -364,6 +366,26 @@ class AssembledContext:
 
 # --------------------------------------------------------------------------- assembler
 
+def _clock_fields(moment: datetime | None = None) -> dict[str, str]:
+    """The current moment, in the machine's own zone and in UTC.
+
+    Both, because the model is asked about other places too. Given the instant in UTC and
+    a place's offset it can do the arithmetic; given only a local time it cannot, and a
+    model that guesses at time zones states a wrong hour with total confidence.
+    """
+    now = moment or datetime.now().astimezone()
+    offset = now.utcoffset() or timedelta(0)
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    hours, minutes = divmod(abs(total_minutes), 60)
+    return {
+        "local": now.strftime("%A, %d %B %Y, %H:%M"),
+        "zone": now.tzname() or "local time",
+        "offset": f"{sign}{hours:02d}:{minutes:02d}",
+        "utc": now.astimezone(UTC).strftime("%A, %d %B %Y, %H:%M UTC"),
+    }
+
+
 @dataclass
 class ContextAssembler:
     estimator: TokenEstimator = DEFAULT_ESTIMATOR
@@ -438,6 +460,14 @@ class ContextAssembler:
         base = lib.get("system", language)
         parts = [base.text.strip()]
         refs = [base.ref]
+
+        # A language model has no clock. Asked for the date, A.R.S answered that it had no
+        # access to it — which was true, and useless: the machine it runs on knows exactly
+        # what time it is. This is ambient context like the language, not a tool call;
+        # spending a GPU round trip to ask what day it is would be absurd.
+        clock = lib.get("now", language)
+        parts.append(clock.render(**_clock_fields()).strip())
+        refs.append(clock.ref)
 
         if preferences:
             frame = lib.get("preferences_frame", language)

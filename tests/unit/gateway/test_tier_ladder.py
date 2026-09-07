@@ -429,3 +429,36 @@ def test_the_distinctive_word_is_the_rarest_one() -> None:
     assert distinctive_word_present("Cât este salariul net lunar?", CONTRACT, both)
     assert not distinctive_word_present("cum e vremea la Cluj?", CONTRACT, both)
     assert not distinctive_word_present("wie ist das Wetter in Cluj", CONTRACT, both)
+
+
+# ------------------------------------------------- answers with a shelf life
+
+@pytest.mark.parametrize("question", [
+    "what is the date today?", "ce zi este azi?", "welches Datum haben wir heute?",
+    "how is the weather in ny", "what time is it in Tokyo", "care e cursul euro azi",
+    "wie ist das Wetter heute",
+])
+def test_a_question_about_now_is_never_cached(question: str) -> None:
+    """A.R.S was asked the date, answered correctly, and cached it. A cached date is wrong
+    by tomorrow — served from tier 0 at 100% confidence in 8 ms, with no model involved to
+    notice. The same goes for a temperature, a price or a score."""
+    from ars_gateway.brain import worth_caching
+
+    assert not worth_caching(question)
+
+
+@pytest.mark.asyncio
+async def test_an_answer_that_used_a_tool_is_not_cached() -> None:
+    """The temperature in New York was cached once already and served back later as
+    though it were a fact. Anything the world outside supplied expires with the turn."""
+    from ars_gateway.brain import Answer
+
+    memory = _RecordingMemory()
+    brain = TieredBrain(memory=memory)
+
+    await brain.learn_answer(
+        "what did the analyst say about the merger",
+        Answer(text="They said it will close in Q3.", tier=Tier.LOCAL, can_learn=False),
+    )
+
+    assert memory.remembered == []

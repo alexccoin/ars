@@ -203,6 +203,7 @@ async def answer_stream(question: str, *, language: Language | None = None,
     collected: list[str] = []
     finished: dict | None = None
     failed = False
+    used_tools = False
     try:
         events = ars.orchestrator.run(
             session=ars.session,
@@ -216,6 +217,11 @@ async def answer_stream(question: str, *, language: Language | None = None,
             kind = payload.get("type")
             if kind == "reply_delta":
                 collected.append(payload.get("text", ""))
+            elif kind == "tool_call":
+                # A turn that consulted the world outside is a turn whose answer expires
+                # with it. The temperature in New York was cached once already, and served
+                # back later as though it were a fact.
+                used_tools = True
             elif kind == "error":
                 # The turn still produces text — "the local model isn't responding right
                 # now" is a good thing to say. It is not a good thing to *learn*: cached,
@@ -246,7 +252,7 @@ async def answer_stream(question: str, *, language: Language | None = None,
     answer = Answer(text=text, tier=tier, language=lang,
                     elapsed_ms=(time.perf_counter() - started) * 1000,
                     reason="answered by the local model on the GPU", can_escalate=False,
-                    can_learn=not failed)
+                    can_learn=not failed and not used_tools)
     ars.brain.stats.record(answer)
     yield _tier_event(answer)
     if finished is not None:

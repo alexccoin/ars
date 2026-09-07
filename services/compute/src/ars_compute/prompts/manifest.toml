@@ -159,3 +159,24 @@ id = "tool_use"
 version = "v2"
 language = "de"
 path = "tool_use.de.v2.md"
+
+# The clock. A model has no idea what day it is, and said so — Alex asked for the date and
+# was told A.R.S has no access to it. It is ambient context, like the language, not a tool
+# call: asking the GPU what day it is would be absurd.
+[[asset]]
+id = "now"
+version = "v1"
+language = "en"
+path = "now.en.v1.md"
+
+[[asset]]
+id = "now"
+version = "v1"
+language = "ro"
+path = "now.ro.v1.md"
+
+[[asset]]
+id = "now"
+version = "v1"
+language = "de"
+path = "now.de.v1.md"

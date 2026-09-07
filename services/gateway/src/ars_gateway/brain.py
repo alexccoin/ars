@@ -277,6 +277,20 @@ much many long often far cost costs
 scaffolding of a question, not its subject — and a question's subject is what has to be
 found in the passage that claims to answer it."""
 
+_VOLATILE = frozenset("""
+now today tonight tomorrow yesterday currently current date time clock hour weather
+temperature forecast news price rate score today's latest
+acum azi astazi maine ieri diseara data ora ceas vremea temperatura pret curs stiri
+jetzt heute morgen gestern datum uhr uhrzeit wetter temperatur nachrichten preis kurs
+""".split())
+"""Words that make an answer true only at the moment it was given.
+
+The date is the clearest case: A.R.S was asked "ce zi este azi?", answered correctly, and
+cached it — and a cached date is wrong by tomorrow, served from tier 0 at 100% confidence
+in 8 ms with no model involved to notice. The same applies to a temperature, a price or a
+score. This is not about the question being unimportant; it is about the answer having a
+shelf life shorter than the cache."""
+
 MIN_CACHEABLE_CONTENT_WORDS = 2
 """Two words that are not stop words. One is not enough: "who created you" reduces to
 {created} and "how are you" reduces to {} — but so does "thanks", and the difference
@@ -290,7 +304,11 @@ def worth_caching(question: str) -> bool:
     again; the cost of caching wrongly is a permanent wrong answer served at 100%
     confidence, which is what happened.
     """
-    words = [w for w in re.findall(r"\w+", question.lower()) if len(w) > 1]
+    words = [_fold(w) for w in re.findall(r"\w+", question) if len(w) > 1]
+    if any(w in _VOLATILE for w in words):
+        # The answer expires. Caching it means confidently serving yesterday's date, or
+        # last week's weather, long after it stopped being true.
+        return False
     content = [w for w in words if w not in _STOPWORDS]
     if len(content) >= MIN_CACHEABLE_CONTENT_WORDS:
         return True
