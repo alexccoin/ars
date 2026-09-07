@@ -709,6 +709,10 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
   /** FastAPI puts the guard's own explanation in `detail`. It is already written
    *  in the user's language by the time it gets here, so it is quoted, never
    *  rewritten. */
+  function langHeaders(extra) {
+    return { 'Accept-Language': getLang(), ...(extra || {}) };
+  }
+
   async function guardDetail(res) {
     try {
       const body = await res.json();
@@ -1226,7 +1230,7 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
     try {
       const res = await fetch(`${baseUrl}/api/health/readings`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: langHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ kind, value, note: note || undefined }),
       });
       if (res.status === 428 || res.status === 403) {
@@ -1234,7 +1238,9 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
         say(t(denied ? 'vitals.blocked.write_denied' : 'vitals.blocked.write', getLang()), denied ? 'error' : 'warn');
         const detail = await guardDetail(res);
         if (detail) say(detail, 'warn');   // the guard's sentence, verbatim
-        if (onOpenAccess) say(t('vitals.blocked.where', getLang(), { tab: t('deck.tab.grants', getLang()) }), 'warn');
+        // The blocked panel above already says where permissions live; only
+        // repeat it when that panel is not on screen (read allowed, write not).
+        if (onOpenAccess && !block) say(t('vitals.blocked.where', getLang(), { tab: t('deck.tab.grants', getLang()) }), 'warn');
         return;
       }
       if (!res.ok) {
@@ -1269,7 +1275,7 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
    *  is down" from "the guard will not allow it", which need different sentences. */
   async function destroyReading(id) {
     try {
-      const res = await fetch(`${baseUrl}/api/health/readings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await fetch(`${baseUrl}/api/health/readings/${encodeURIComponent(id)}`, { method: 'DELETE', headers: langHeaders() });
       if (res.status === 428 || res.status === 403) {
         return { ok: false, status: res.status, detail: await guardDetail(res) };
       }
@@ -1297,7 +1303,7 @@ export function createVitalsPanel({ root, hud, getLang, baseUrl = '', onOpenAcce
     inflight = true;
     lastFetchAt = Date.now();
     try {
-      const res = await fetch(`${baseUrl}/api/health/readings?days=${days}`);
+      const res = await fetch(`${baseUrl}/api/health/readings?days=${days}`, { headers: langHeaders() });
       if (res.status === 428 || res.status === 403) {
         // The guard fronts this endpoint. Refused is not empty: drop whatever was
         // on screen (it is health data the user has not authorised showing) and

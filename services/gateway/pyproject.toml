@@ -7,7 +7,7 @@ authors = [{ name = "Alexandru Stratulat", email = "alex.ccoin@gmail.com" }]
 license = { file = "../../LICENSE" }
 dependencies = [
     "ars-protocol", "ars-core", "ars-compute", "ars-memory", "ars-auth",
-    "ars-skills-runtime", "ars-voice",
+    "ars-skills-runtime", "ars-voice", "ars-medical",
     "fastapi>=0.115", "uvicorn[standard]>=0.32", "python-multipart>=0.0.12",
     "pypdf>=5.1", "python-docx>=1.1",
 ]

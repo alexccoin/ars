@@ -468,19 +468,28 @@ class VoicePipeline:
         return self._recent.snapshot(event.pre_roll_ms)
 
     async def _open_asr(self, pre_roll: tuple[AudioFrame, ...]) -> None:
+        assert self.turn is not None
+        # Whatever was decoding is no longer being answered. Tear it down here rather than
+        # letting two ASR tasks share one microphone: the second one silently wins, and
+        # which one that is depends on timing.
+        self._retire_asr()
         self.endpointer.reset()
         self.vad.reset()
         await self._prepare_vad()
-        self._asr_channel = FrameChannel()
+        channel = FrameChannel()
+        final: asyncio.Future[Transcript] = asyncio.get_running_loop().create_future()
+        self._asr_channel = channel
+        self._final = final
         self._speech_active = True
         self._notify_speech_active(True)
-        self._final = asyncio.get_running_loop().create_future()
-        self._asr_task = asyncio.create_task(self._consume_asr(), name="voice-asr")
+        self._asr_task = asyncio.create_task(
+            self._consume_asr(channel, final, self.turn), name="voice-asr"
+        )
 
         # Pre-roll first, renumbered so the spliced stream stays monotonic: a seq jump is how
         # every downstream component detects dropped audio.
         for frame in reseq(pre_roll, start=0):
-            self._asr_channel.push_nowait(frame)
+            channel.push_nowait(frame)
         self._asr_seq = len(pre_roll)
         # The pre-roll is audio the user already spoke; run it through the endpointer too, or
         # a wakeword followed immediately by speech looks like silence and endpoints at once.
@@ -488,30 +497,39 @@ class VoicePipeline:
             step = self.vad.step(frame)
             self.endpointer.update(step.raw_is_speech, frame_duration_ms(frame))
 
-    async def _consume_asr(self) -> None:
-        assert self._asr_channel is not None and self.turn is not None
+    async def _consume_asr(
+        self, channel: FrameChannel, final: asyncio.Future[Transcript], turn: Turn
+    ) -> None:
+        """Decode one utterance, into the future that belongs to *that* utterance.
+
+        The channel, the future and the turn are arguments and not `self._asr_channel`,
+        `self._final` and `self.turn`, because those three move underneath a decode that is
+        still running. When a press or a barge-in reopens the microphone mid-decode, the
+        pipeline's attributes already point at the *new* utterance — so a task started for
+        the old one would resolve the new one's future with the old one's text, and the old
+        `_close_utterance` would then wait out its full 15-second timeout on a future nobody
+        will ever complete. One superseded utterance, two wrong answers.
+        """
         language = self.session.preferred_language
         try:
-            async for transcript in self.asr.transcribe(
-                self._asr_channel.frames(), language=language
-            ):
+            async for transcript in self.asr.transcribe(channel.frames(), language=language):
                 if transcript.is_final:
                     if self.turn_latency is not None:
                         self.turn_latency.asr_final_ms = LatencyRecorder.mark()
-                    if self._final is not None and not self._final.done():
-                        self._final.set_result(transcript)
+                    if not final.done():
+                        final.set_result(transcript)
                     return
                 if self.turn_latency is not None and self.turn_latency.asr_first_partial_ms is None:
                     self.turn_latency.asr_first_partial_ms = LatencyRecorder.mark()
                 self.transcripts.append(transcript)
                 self.endpointer.note_partial(transcript.text, transcript.language)
-                await self._emit(TranscriptEvent(turn_id=self.turn.id, transcript=transcript))
+                await self._emit(TranscriptEvent(turn_id=turn.id, transcript=transcript))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             log.exception("ASR failed")
-            if self._final is not None and not self._final.done():
-                self._final.set_exception(exc)
+            if not final.done():
+                final.set_exception(exc)
 
     async def _listen(self, frame: AudioFrame) -> None:
         if self._asr_channel is None:
@@ -571,8 +589,17 @@ class VoicePipeline:
         epoch = self._epoch
         await self._enter(AgentState.TRANSCRIBING)
         self._asr_channel.close()
+        final = self._final
         try:
-            transcript = await asyncio.wait_for(self._final, timeout=15.0)
+            transcript = await asyncio.wait_for(final, timeout=15.0)
+        except asyncio.CancelledError:
+            # Only ours if the world moved on underneath us. A cancellation with the epoch
+            # unchanged is the pump being torn down, and swallowing that would keep a dead
+            # session alive.
+            if epoch != self._epoch:
+                log.info("utterance superseded while decoding; dropping it")
+                return
+            raise
         except Exception as exc:  # includes TimeoutError
             log.warning("no final transcript: %s", exc)
             await self._emit(
@@ -801,6 +828,23 @@ class VoicePipeline:
             self._asr_task.cancel()
         self._asr_task = None
         self._asr_channel = None
+
+    def _retire_asr(self) -> None:
+        """Drop the utterance in progress without awaiting it.
+
+        Synchronous on purpose: `_open_asr` is on the path a user is waiting on, and the
+        decode being retired is a thread we no longer care about. Cancelling the future as
+        well as the task matters — `_close_utterance` may be sitting on it, and leaving it
+        pending would cost it the full 15-second timeout before it noticed."""
+        if self._asr_channel is not None:
+            self._asr_channel.close()
+        if self._asr_task is not None and not self._asr_task.done():
+            self._asr_task.cancel()
+        if self._final is not None and not self._final.done():
+            self._final.cancel()
+        self._asr_task = None
+        self._asr_channel = None
+        self._final = None
 
     async def _close_asr(self) -> None:
         if self._asr_channel is not None:

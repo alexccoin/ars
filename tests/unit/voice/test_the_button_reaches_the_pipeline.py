@@ -309,9 +309,14 @@ async def test_a_press_during_the_decode_does_not_answer_the_abandoned_question(
     """TRANSCRIBING is short — roughly 150 ms on real engines — but it is not zero.
 
     `_close_utterance` awaits the final decode, and a press that lands in that window opens
-    a new utterance underneath it. Without an epoch to compare, the decode then comes back,
-    starts a reply for the question the user has already moved past, and the session has two
-    turns in flight: two replies, two voices, one of which nobody asked for.
+    a new utterance underneath it. Two things then went wrong at once, and each is worse
+    than the bug being fixed:
+
+    * The decode came back and started a reply for the question the user had already moved
+      past — a second turn in flight on top of the live one, a second voice.
+    * The ASR task resolved `self._final`, which by then belonged to the *new* utterance.
+      So the new question inherited the old question's text, and the old `_close_utterance`
+      sat out its full 15-second timeout on a future nobody would ever complete.
 
     The decode is slowed to 600 ms here so the window is real rather than lucky.
     """
@@ -329,13 +334,13 @@ async def test_a_press_during_the_decode_does_not_answer_the_abandoned_question(
         session=Session(device=Device.HEADLESS),
         sink=NullSink(),
     )
+    saw_transcribing = asyncio.Event()
     finals: list[str] = []
 
     await pipeline.request_turn()
 
     async def press_during_the_decode() -> None:
-        while pipeline.state is not AgentState.TRANSCRIBING:  # noqa: ASYNC110
-            await asyncio.sleep(0.005)
+        await saw_transcribing.wait()
         await asyncio.sleep(0.1)  # squarely inside the 600 ms decode
         await pipeline.request_turn()
 
@@ -344,23 +349,17 @@ async def test_a_press_during_the_decode_does_not_answer_the_abandoned_question(
     async def drive() -> None:
         async for event in pipeline.run(realtime(one_question())):
             kind = getattr(event, "type", None)
+            if kind == "state" and event.state is AgentState.TRANSCRIBING:
+                saw_transcribing.set()
             if kind == "transcript" and event.transcript.is_final:
                 finals.append(event.transcript.text)
-            if kind == "state" and event.state is AgentState.LISTENING and finals:
-                return
-            if kind == "state" and event.state is AgentState.LISTENING and (
-                pipeline.counters.wake_events > 1
-            ):
-                return
 
     with contextlib.suppress(TimeoutError):
-        await asyncio.wait_for(drive(), timeout=10)
+        await asyncio.wait_for(drive(), timeout=6)
     presser.cancel()
-    await asyncio.sleep(0.3)
 
-    assert finals == [], (
-        f"a superseded utterance was answered anyway: {finals}"
-    )
+    assert saw_transcribing.is_set(), "the test never reached the window it is about"
+    assert finals == [], f"a superseded utterance was answered anyway: {finals}"
     assert pipeline.counters.utterances == 0, (
         "the abandoned question was counted, and therefore replied to"
     )

@@ -31,6 +31,7 @@ from ars_memory.config import MemoryConfig
 from ars_memory.store import SqliteMemoryStore
 from ars_protocol import (
     Capability,
+    new_id,
     GuardQuery,
     Verdict,
     RangeFinding,
@@ -525,7 +526,22 @@ async def status() -> dict:
 
 # --------------------------------------------------------------------------- health
 
-async def _guard_health(capability: Capability, resource: str, summary: str) -> None:
+def _consent(request: Request) -> dict:
+    """Consent and language, read off the request.
+
+    `X-Ars-Consent: yes` means the interface showed the guard's own question and the user
+    said yes — it is not a bypass, it is the answer to the question the guard asked.
+    """
+    header = (request.headers.get("accept-language") or "").split(",")[0].strip()[:2]
+    language = next((l for l in ars.config.languages if l.value == header), None)
+    return {
+        "consented": request.headers.get("x-ars-consent", "").lower() == "yes",
+        "language": language,
+    }
+
+
+async def _guard_health(capability: Capability, resource: str | None, summary: str,
+                        *, consented: bool = False, language: Language | None = None) -> None:
     """Put a health request through the guard, and record the outcome.
 
     These endpoints called the store directly. `HEALTH_READ` (HIGH, private) and
@@ -539,17 +555,36 @@ async def _guard_health(capability: Capability, resource: str, summary: str) -> 
     are different facts, and a health record that quietly shows nothing is worse than one
     that says it will not tell you.
     """
+    if language is not None:
+        # The guard writes its refusals in the user's language; without this it answered
+        # a Romanian interface in English, which is the one sentence that must not be in
+        # the wrong language — it is what the user is being asked to agree to.
+        ars.guard.set_session_language(ars.session.id, language)
+
     query = GuardQuery(
         session_id=ars.session.id,
-        turn_id="trn_" + "0" * 20,
+        # A fresh id per request, not a constant. With a fixed turn_id the per-TURN rate
+        # limit became a per-PROCESS one: four reads and exactly one write for the life of
+        # the gateway, after which every health request was permanently denied with
+        # "something is looping". Each HTTP request is its own turn.
+        turn_id=new_id("trn"),
         capability=capability,
         resource=resource,
         summary=summary,
     )
     decision = await ars.guard.evaluate(query)
     if decision.verdict is Verdict.DENY:
+        await ars.guard.record_outcome(query, decision, outcome="refused")
         raise HTTPException(403, decision.explanation)
+    if decision.verdict is Verdict.ASK and consented:
+        # The interface showed the guard's own question and the user said yes. That is
+        # what an ASK is for; refusing it anyway would make consent unreachable and the
+        # whole health record permanently unopenable.
+        await ars.guard.record_outcome(query, decision, outcome="performed",
+                                       user_confirmed=True)
+        return
     if decision.verdict is Verdict.ASK:
+        await ars.guard.record_outcome(query, decision, outcome="asked")
         # 428 Precondition Required: the request is well formed and refused only for
         # want of a decision the user has not made yet. The interface turns this into the
         # consent prompt the guard already wrote, in the user's language.
@@ -559,7 +594,7 @@ async def _guard_health(capability: Capability, resource: str, summary: str) -> 
 
 
 @app.post("/api/health/readings")
-async def record_reading(body: dict) -> dict:
+async def record_reading(body: dict, request: Request) -> dict:
     """Record one measurement.
 
     Implausible values are refused rather than stored: a cuff that slipped reports 20/10,
@@ -576,9 +611,14 @@ async def record_reading(body: dict) -> dict:
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(400, "value must be a number") from exc
 
+    # No English summary: the guard composes the whole sentence from its own EN/RO/DE
+    # phrasing for the capability and the resource. Handing it an English clause produced
+    # "Dafür brauche ich deine Erlaubnis: … look at your health readings" — a consent
+    # prompt half in a language the reader did not choose, which is the single worst
+    # sentence in the product to get wrong, because it is what they are agreeing to.
     await _guard_health(
-        Capability.HEALTH_WRITE, kind.value,
-        f"save a {kind.display_name} reading of {value} {kind.unit} to your health record",
+        Capability.HEALTH_WRITE, f"{kind.display_name} {value} {kind.unit}", "",
+        **_consent(request),
     )
     reading = VitalReading(kind=kind, value=value, note=body.get("note") or None)
     if body.get("measured_at_ms"):
@@ -593,15 +633,18 @@ async def record_reading(body: dict) -> dict:
 
 
 @app.get("/api/health/readings")
-async def read_readings(kind: str | None = None, days: int = 30) -> dict:
+async def read_readings(request: Request, kind: str | None = None,
+                        days: int = 30) -> dict:
     """Your readings, and which of them sit outside a cited range.
 
     `outside_range` is a comparison against a named source, never a judgement: the
     protocol has no type for a diagnosis and this endpoint cannot invent one.
     """
     await _guard_health(
-        Capability.HEALTH_READ, kind or "all",
-        f"look at your health readings from the last {days} days",
+        # None, not "all": with no resource the guard uses its own "everything it covers"
+        # phrasing, which it has in every language. "all" is an English word wearing a
+        # translation's clothes.
+        Capability.HEALTH_READ, kind or None, "", **_consent(request),
     )
     since = int(time.time() * 1000) - days * 86_400_000
     if kind:
@@ -634,11 +677,13 @@ async def read_readings(kind: str | None = None, days: int = 30) -> dict:
 
 
 @app.delete("/api/health/readings/{reading_id}")
-async def forget_reading(reading_id: str) -> dict:
+async def forget_reading(reading_id: str, request: Request) -> dict:
     """Really delete it. Non-negotiable #7 applies here with more force than anywhere."""
-    await _guard_health(Capability.HEALTH_WRITE, reading_id,
-                        "delete a reading from your health record")
-    return {"id": reading_id, "removed": await ars.vitals.forget(record_id=reading_id)}
+    await _guard_health(Capability.HEALTH_WRITE, reading_id, "", **_consent(request))
+    # `reading_id`, not `record_id`. It was the latter, so every delete was a 500 and
+    # non-negotiable #7 did not work through the API at all — found by the interface that
+    # tried to use it.
+    return {"id": reading_id, "removed": await ars.vitals.forget(reading_id=reading_id)}
 
 
 # -------------------------------------------------------------------------- pairing
