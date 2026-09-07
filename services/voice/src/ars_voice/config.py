@@ -183,14 +183,30 @@ class TtsConfig(BaseSettings):
 class BargeInConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ARS_BARGEIN_", env_file=".env", extra="ignore")
 
-    enabled: bool = True
+    enabled: bool = False
+    """OFF by default, because a laptop is half-duplex whether we admit it or not.
+
+    With it on and audio going to built-in speakers, A.R.S hears itself. Measured on this
+    machine: it spoke, its own output crossed the barge-in threshold, it cancelled its own
+    turn as though interrupted, resumed listening with the echo as pre-roll, transcribed
+    itself ("It's...", "Please.", "Search.") and answered — five times, escalating, until
+    the microphone was closed from outside. Not a tuning problem: `energy_margin_db` and
+    `min_speech_ms` below were written to prevent exactly this and did not, because a
+    speaker 30 cm from a microphone is not a marginal signal.
+
+    Turning this on requires an echo-cancelled input — a headset, or AEC that does not
+    exist here yet. Until then the explicit interrupt (the stop button, Escape, or a
+    `{"type": "interrupt"}` on the socket) is how a turn is cut short, and it works
+    without a microphone at all."""
+
     min_speech_ms: int = Field(default=180, ge=FRAME_MS)
     """Sustained user speech required to interrupt playback. Too low and A.R.S interrupts
-    itself on speaker bleed; too high and the user has to shout over it."""
+    itself on speaker bleed; too high and the user has to shout over it. Only consulted
+    when `enabled`."""
 
     energy_margin_db: float = 6.0
     """Extra dB above the VAD threshold demanded while the speaker is active, to discount
-    acoustic echo of our own output."""
+    acoustic echo of our own output. Insufficient on open speakers — see `enabled`."""
 
     resume_listening: bool = True
     """After a barge-in, go straight to LISTENING and capture the interrupting utterance —

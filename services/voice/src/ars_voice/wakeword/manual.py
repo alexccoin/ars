@@ -13,7 +13,11 @@ to start a turn is how one of them ends up not cancelling properly.
 
 from __future__ import annotations
 
+import logging
+
 from .base import BufferedWakewordEngine
+
+log = logging.getLogger(__name__)
 
 
 class ManualWakewordEngine(BufferedWakewordEngine):
@@ -43,8 +47,23 @@ class ManualWakewordEngine(BufferedWakewordEngine):
         if not self._armed:
             return 0.0
         self._armed = False
+        log.debug("manual wakeword firing")
         return 1.0
 
     def reset(self) -> None:
+        """Per-stream state is cleared; an arm is NOT.
+
+        `BufferedWakewordEngine.detect` resets at the start of every stream, which is
+        right for a spoken keyword — pre-roll, refractory and window state all belong to
+        one stream. An arm does not: it is a person pressing a button, and it happens
+        before the stream exists because the gateway presses as soon as it has asked the
+        loop to start.
+
+        Clearing it here meant every single press was discarded microseconds after it was
+        made. The microphone opened, delivered audio perfectly, and waited for a keyword
+        that could not arrive — indistinguishable, from outside, from a broken microphone.
+        Alex pressed the button and got nothing back, repeatedly, because of this line.
+        """
+        armed = self._armed
         super().reset()
-        self._armed = False
+        self._armed = armed

@@ -390,6 +390,7 @@ async def websocket(ws: WebSocket) -> None:
                 # leaves this process.
                 if message.get("on") is False:
                     if ars.voice is not None:
+                        ars.voice.release()
                         await ars.voice.stop()
                     await ws.send_json({"type": "listening", "on": False})
                     continue

@@ -36,9 +36,13 @@ from voice_helpers import keyword, silence, speech
 
 
 def build(
-    *, script, handler=None, tts=None, config=None, sink=None, asr=None
+    *, script, handler=None, tts=None, config=None, sink=None, asr=None, barge_in=False
 ) -> VoicePipeline:
     config = config or VoicePipelineConfig()
+    # Barge-in ships OFF: on open speakers A.R.S hears itself, cancels its own turn and
+    # answers its own echo. A test that is about barge-in asks for it, rather than
+    # inheriting a default that would be unsafe in the product.
+    config.barge_in.enabled = barge_in or config.barge_in.enabled
     return VoicePipeline(
         wakeword=MockWakewordEngine(
             score_fn=marker_score,
@@ -224,6 +228,10 @@ async def test_a_barge_in_utterance_keeps_its_first_word():
     """No wake phrase precedes a barge-in, so stripping there would eat a real first word."""
     handler = BlockingHandler()
     config = VoicePipelineConfig()
+    # Barge-in is off by default: on open speakers A.R.S hears itself, cancels its
+    # own turn and answers its own echo. These tests are ABOUT barge-in, so they
+    # ask for it explicitly rather than relying on a default that would be unsafe.
+    config.barge_in.enabled = True
     config.core.wakeword = "hey_jarvis"
     pipeline = build(
         script=[
@@ -327,6 +335,7 @@ async def test_barge_in_cancels_synthesis_and_the_turn():
         ],
         handler=handler,
         tts=tts,
+        barge_in=True,
     )
 
     speaking = asyncio.Event()
@@ -373,6 +382,7 @@ async def test_after_a_barge_in_the_user_keeps_talking_without_saying_the_wakewo
         ],
         handler=handler,
         tts=MockTtsEngine(chunk_ms=120, realtime_factor=3.0),
+        barge_in=True,
     )
 
     speaking = asyncio.Event()
@@ -405,6 +415,7 @@ async def test_barge_in_cancellation_latency_is_measured():
         ],
         handler=handler,
         tts=MockTtsEngine(chunk_ms=120, realtime_factor=3.0),
+        barge_in=True,
     )
     speaking = asyncio.Event()
     async for event in pipeline.run(barge_in_audio(speaking)):
@@ -419,6 +430,10 @@ async def test_barge_in_cancellation_latency_is_measured():
 async def test_barge_in_can_be_disabled():
     handler = BlockingHandler()
     config = VoicePipelineConfig()
+    # Barge-in is off by default: on open speakers A.R.S hears itself, cancels its
+    # own turn and answers its own echo. These tests are ABOUT barge-in, so they
+    # ask for it explicitly rather than relying on a default that would be unsafe.
+    config.barge_in.enabled = True
     config.barge_in.enabled = False
     pipeline = build(
         script=[ScriptedUtterance("turn the lights off", Language.EN, 0.94)],

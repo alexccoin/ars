@@ -89,6 +89,19 @@ class VoiceLoop:
         self._language = language
         self._pipeline = None
         self._wake: ManualWakewordEngine | None = None
+        self._frames = 0
+        """Frames seen since the loop started. Zero is a diagnosis, not a quiet room."""
+        self._holding = False
+        """True while the user has the microphone switched on.
+
+        A press used to arm exactly one turn, and the pipeline gives a turn six seconds to
+        hear speech before returning to idle. Miss that window — pause to think, or press
+        before you are ready — and the microphone is silently deaf, with nothing on screen
+        to say so. "I speak but I don't get any reactions back" is what that feels like.
+
+        So the button is a switch, not a trigger: while it is on, every return to idle
+        re-arms. Safe now that barge-in is off, because the pipeline does not listen while
+        it is speaking and cannot hear itself."""
         self._sink: SpeakerSink | None = None
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
@@ -118,15 +131,33 @@ class VoiceLoop:
                 return
             if self._pipeline is None:
                 await asyncio.to_thread(self._build)
+            self._frames = 0
             self.warm_up_ms = await self._pipeline.warm_up()
             log.info("voice warm: %s", self.warm_up_ms)
             self._task = asyncio.create_task(self._pump(), name="voice-loop")
 
+    SILENCE_ALARM_S = 4.0
+    """How long a live microphone may deliver nothing before we say so.
+
+    A working capture produces a frame every 20 ms, silence included — "no audio" and
+    "quiet room" are completely different signals at this layer. When the microphone
+    cannot be opened at all, sounddevice does not always raise: the stream simply never
+    calls back, `frames()` never yields, the pipeline never sees a frame, and the whole
+    loop sits there producing nothing. Alex pressed the button and got no reaction at all,
+    twice, because failure looked exactly like a quiet room.
+    """
+
     async def _pump(self) -> None:
         mic = MicrophoneSource()
+        watchdog = asyncio.create_task(self._warn_if_deaf(), name="voice-watchdog")
         try:
-            async for event in self._pipeline.run(mic.frames()):
+            async for event in self._pipeline.run(self._counted(mic.frames())):
                 await self._emit(event)
+                # Re-arm on every return to idle, so a missed window costs a moment
+                # rather than the whole conversation.
+                if (self._holding and getattr(event, "type", None) == "state"
+                        and getattr(event.state, "value", None) == "idle"):
+                    self.press(hold=True)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -134,6 +165,39 @@ class VoiceLoop:
             await self._emit_dict({
                 "type": "error", "code": type(exc).__name__,
                 "message": f"the microphone stopped: {exc}", "recoverable": True,
+            })
+        finally:
+            watchdog.cancel()
+            if self._frames == 0:
+                # The loop ended without a single frame. Say so rather than stopping
+                # quietly: a silent failure here is indistinguishable from working.
+                await self._emit_dict({
+                    "type": "error", "code": "NoAudio",
+                    "message": (
+                        "The microphone delivered no audio at all. On macOS this is "
+                        "almost always the permission prompt not being granted to this "
+                        "app — check System Settings › Privacy & Security › Microphone."
+                    ),
+                    "recoverable": True,
+                })
+            await self._emit_dict({"type": "listening", "on": False, "warming": False})
+
+    async def _counted(self, frames):
+        async for frame in frames:
+            self._frames += 1
+            yield frame
+
+    async def _warn_if_deaf(self) -> None:
+        await asyncio.sleep(self.SILENCE_ALARM_S)
+        if self._frames == 0:
+            log.error("microphone delivered no frames in %.0fs", self.SILENCE_ALARM_S)
+            await self._emit_dict({
+                "type": "error", "code": "NoAudio",
+                "message": (
+                    "I cannot hear the microphone — no audio is arriving at all. This is "
+                    "not a quiet room: a working microphone sends silence too."
+                ),
+                "recoverable": True,
             })
 
     async def _emit(self, event: ServerEvent) -> None:
@@ -162,10 +226,25 @@ class VoiceLoop:
         if asyncio.iscoroutine(result):
             await result
 
-    def press(self) -> None:
-        """The mic button. Starts one turn, with the half second before the press."""
+    def press(self, *, hold: bool = False) -> None:
+        """The mic button. Starts a turn, with the half second before the press.
+
+        `hold` distinguishes the user pressing from the loop re-arming itself; only a real
+        press turns listening on.
+        """
+        if not hold:
+            self._holding = True
         if self._wake is not None:
             self._wake.trigger()
+            log.info("press: armed %s (hold=%s)", type(self._wake).__name__, hold)
+        else:
+            log.error("press: no wakeword engine — the press went nowhere")
+
+    def release(self) -> None:
+        """The user switched the microphone off. Stop re-arming; finish any turn in
+        flight, because cutting off a question halfway through is worse than answering
+        one the user has stopped caring about."""
+        self._holding = False
 
     async def interrupt(self) -> None:
         if self._pipeline is not None:
@@ -173,6 +252,7 @@ class VoiceLoop:
 
     async def stop(self) -> None:
         async with self._lock:
+            self._holding = False
             if self._task is not None:
                 self._task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
