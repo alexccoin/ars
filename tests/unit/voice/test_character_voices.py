@@ -256,7 +256,10 @@ def test_the_catalogue_and_the_dsp_agree_on_which_characters_exist():
     copy, which means they can drift - a character with a description and no chain resolves
     to nothing, and one with a chain and no description is unpickable and untranslated."""
     assert set(CHARACTERS) == set(CHARACTER_CHAINS)
-    assert {c.kind for c in CHARACTERS.values()} == {"robot", "alien"}
+    # Kinds are what a picker groups by, so a new one is a product decision rather than an
+    # accident — but the set is not frozen at two: "companion" was added for a character
+    # a child talks to, which is deliberately nothing like a robot or an alien.
+    assert {c.kind for c in CHARACTERS.values()} == {"robot", "alien", "companion"}
 
 
 def test_an_unknown_character_is_refused_at_construction():

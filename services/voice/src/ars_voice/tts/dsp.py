@@ -305,6 +305,22 @@ class Limiter(Effect):
 # --------------------------------------------------------------------------- presets
 
 CHARACTER_CHAINS: dict[str, Callable[[], list[Effect]]] = {
+    # A small, bright, eager companion — built for a child to talk to.
+    #
+    # Deliberately the gentlest chain here. Every other character says "this is a machine":
+    # ring modulation, bit crushing, a vocoder. A voice a child talks to should not. So
+    # this is a short comb for a little presence, a slow shallow chorus so it never sounds
+    # flat, and nothing that buzzes, tears or grates. The character comes mostly from the
+    # formant shift on the voice underneath it, which makes a physically smaller speaker
+    # rather than a processed one.
+    "pup": lambda: [
+        Comb(2.4, 0.18, 0.22),
+        # Shallow and fast, which this class's own docstring calls "a nicer voice, not a
+        # stranger one" — exactly what is wanted here and the opposite of the alien
+        # presets, which use the same effect deep and slow.
+        Chorus(((12.0, 0.22, 3.1), (17.0, 0.15, 3.8)), mix=0.28),
+        Gain(1.06),
+    ],
     "robot_ring": lambda: [
         RingMod(50.0, 0.92), Comb(5.5, 0.55, 0.4), BitCrush(8, 2), Gain(1.3),
     ],

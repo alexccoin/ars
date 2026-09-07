@@ -52,6 +52,7 @@ from .access import (
     load_or_create_token, origin_is_own_page, tokens_match,
 )
 from .brain import Answer, Tier, TieredBrain
+from .persona import PersonaPicker
 from .documents import DocumentLibrary, UnsupportedDocument
 from .voice import LadderTurnHandler, VoiceLoop
 
@@ -76,6 +77,7 @@ class Ars:
         self.library: Any = None
         self.skills: Any = None
         self.translator: Any = None
+        self.personas: Any = None
         self.vitals: Any = None
         self.voice: Any = None
         """Built on the first press of the mic button, never at startup: the voice models
@@ -125,6 +127,9 @@ class Ars:
         self.orchestrator = TurnOrchestrator(
             backend=self.backend, guard=self.guard, skills=self.skills
         )
+        self.personas = PersonaPicker(self.config.companion_name)
+        if self.personas.enabled:
+            log.info("companion persona active for %s", self.personas.name)
         self.brain = TieredBrain(memory=self.memory)
         # Documents are indexed in every language A.R.S speaks, not only their own. The
         # embedding model cannot match a question to a passage across languages — measured,
@@ -190,7 +195,8 @@ class Ars:
         """Start (or reuse) the voice loop, and press the button once."""
         if self.voice is None:
             self.voice = VoiceLoop(
-                handler=LadderTurnHandler(answer_stream, cancel_backend=self.backend.cancel),
+                handler=LadderTurnHandler(answer_stream, cancel_backend=self.backend.cancel,
+                                          personas=self.personas),
                 session=self.session,
                 on_event=on_event,
             )
@@ -247,6 +253,13 @@ async def answer_stream(question: str, *, language: Language | None = None,
     """
     started = time.perf_counter()
     lang = language or Language.EN
+
+    # Announced before anything else in the turn: the interface changes the entity's form
+    # on this, and a face that changes after the answer has already been spoken is a face
+    # that changed for no visible reason.
+    if ars.personas is not None and ars.personas.enabled:
+        choice = ars.personas.choose(question, lang)
+        yield {"type": "persona", "persona": choice.persona.value, "reason": choice.reason}
 
     if min_tier is None or min_tier <= Tier.DOCUMENTS:
         cheap = await ars.brain.try_cheap_tiers(question, language=lang)

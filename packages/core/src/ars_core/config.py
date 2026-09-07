@@ -103,6 +103,14 @@ class ArsConfig(BaseSettings):
             return tuple(part.strip() for part in text.split(",") if part.strip())
         return v
 
+    companion_name: str = ""
+    """A child's name. When A.R.S is asked about them it answers in a different voice and
+    shows a different face — a seven-year-old and an adult want different things from the
+    same assistant, and switching both is how a machine says "I am talking to you now".
+
+    Empty by default and empty in the repository, because a child's name committed to a
+    repository is a child's name published. Set it in .env."""
+
     listen_host: str = "127.0.0.1"
     """Which interface the gateway binds to.
 

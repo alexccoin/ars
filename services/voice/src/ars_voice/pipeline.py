@@ -657,8 +657,12 @@ class VoicePipeline:
                 self.handler.respond(transcript, turn), turn, language
             )
             first_audio = True
+            # The handler may name a voice for this turn — a different persona for a
+            # different listener. It falls back to the configured voice for the language,
+            # so a handler that has no opinion behaves exactly as before.
+            voice = self.handler.reply_voice(transcript) or self.config.voice_for(language)
             async for chunk in self.synthesizer.stream(
-                deltas, language=language, voice=self.config.voice_for(language)
+                deltas, language=language, voice=voice
             ):
                 if chunk.is_final:
                     continue

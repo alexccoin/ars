@@ -41,9 +41,11 @@ class LadderTurnHandler(TurnHandler):
     this module: passing the function in keeps the dependency pointing one way.
     """
 
-    def __init__(self, answer_stream: AnswerStream, *, cancel_backend=None) -> None:
+    def __init__(self, answer_stream: AnswerStream, *, cancel_backend=None,
+                 personas=None) -> None:
         self._answer_stream = answer_stream
         self._cancel_backend = cancel_backend
+        self._personas = personas
         self._cancelled = asyncio.Event()
 
     async def respond(self, transcript: Transcript, turn: Turn) -> AsyncIterator[str]:
@@ -60,6 +62,12 @@ class LadderTurnHandler(TurnHandler):
                     yield event["text"]
         finally:
             await stream.aclose()
+
+    def reply_voice(self, transcript: Transcript) -> str | None:
+        """A different voice when the turn is about someone who needs one."""
+        if self._personas is None or not self._personas.enabled:
+            return None
+        return self._personas.choose(transcript.text, transcript.language).voice
 
     async def cancel(self) -> None:
         """Barge-in. Stop generating, and stop the model that is generating.

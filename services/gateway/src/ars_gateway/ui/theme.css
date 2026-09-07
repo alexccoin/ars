@@ -140,6 +140,15 @@
   --ars-entity-state-acting:    var(--ars-amber);
   --ars-entity-state-alert:     var(--ars-red);
 
+  /* Companion form — the same being, talking to a child. setPersona('companion')
+     blends the whole palette here: a warm, friendly blue instead of the cold
+     instrument cyan, and gold where the rim highlight usually goes. The state
+     hues above still show through, so alert is still red and acting is still
+     amber; a friendlier face must not hide a refusal. */
+  --ars-entity-companion-base:  #3F82FF;  /* the pup's body light */
+  --ars-entity-companion-gold:  #FFC23D;  /* badge, collar, eye ring, inner ear */
+  --ars-entity-companion-deep:  #06152F;  /* the dark inside its eyes */
+
   --ars-entity-bloom:           1.0;   /* 0 kills the bloom pass entirely */
   --ars-entity-grain:           0.035; /* film grain over the composite */
   --ars-entity-scanline:        0.055; /* scanline depth inside the being */
@@ -379,6 +388,9 @@
 
     --ars-entity-deep: #0B3948;
     --ars-entity-rim:  #0A7E96;
+    --ars-entity-companion-base: #1F4FBE;
+    --ars-entity-companion-gold: #9A6400;
+    --ars-entity-companion-deep: #123A63;
     --ars-entity-bloom: 0.35;
     --ars-entity-grain: 0.012;
     --ars-entity-scanline: 0.02;
@@ -439,6 +451,9 @@
   --ars-shadow-4: 0 6px 18px rgb(13 27 38 / 0.12), 0 32px 70px -26px rgb(13 27 38 / 0.32);
   --ars-entity-deep: #0B3948;
   --ars-entity-rim:  #0A7E96;
+  --ars-entity-companion-base: #1F4FBE;
+  --ars-entity-companion-gold: #9A6400;
+  --ars-entity-companion-deep: #123A63;
   --ars-entity-bloom: 0.35;
   --ars-entity-grain: 0.012;
   --ars-entity-scanline: 0.02;

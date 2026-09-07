@@ -292,9 +292,19 @@ VOICES: tuple[VoiceProfile, ...] = (
     VoiceProfile("mihai_deep", _RO, "ro_RO-mihai-medium", _M, 103.9, "CC0",
                  formant_k=0.85, accent="romanian", tags=("deep", "pitch_shifted"),
                  caveats=("ro_only_male",)),
+    VoiceProfile("pup_ro", _RO, "ro_RO-mihai-medium", _N, None, "CC0",
+                 formant_k=1.38, accent="romanian", tags=("young", "bright", "pitch_shifted"),
+                 caveats=("ro_only_male",)),
     VoiceProfile("mihai_light", _RO, "ro_RO-mihai-medium", _N, 156.9, "CC0",
                  formant_k=1.30, accent="romanian", tags=("young", "pitch_shifted"),
                  caveats=("ro_only_male", "ro_derived_not_female")),
+    # A small, young-sounding speaker in each language, for a child. Built by shifting a real
+    # voice up rather than by imitating anyone: `formant_k` scales pitch AND formants, so
+    # the result is a physically smaller speaker rather than a chipmunk. Named `pup_*` and
+    # not after any character — this is an original voice, and it is not, and does not
+    # claim to be, a performance anyone recorded.
+    VoiceProfile("pup_en", _EN, "en_US-joe-medium", _N, None, "CC0",
+                 formant_k=1.34, accent="american", tags=("young", "bright", "pitch_shifted")),
     # ---------------------------------------------------------------- German
     VoiceProfile("thorsten", _DE, "de_DE-thorsten-medium", _M, 126.0, "CC0",
                  accent="german", tags=("everyday", "clear")),
@@ -302,6 +312,8 @@ VOICES: tuple[VoiceProfile, ...] = (
                  accent="german", tags=("calm", "warm")),
     VoiceProfile("ramona", _DE, "de_DE-ramona-low", _F, 188.2, "see URL",
                  accent="german", tags=("bright", "clear")),
+    VoiceProfile("pup_de", _DE, "de_DE-thorsten-medium", _N, None, "CC0",
+                 formant_k=1.34, accent="german", tags=("young", "bright", "pitch_shifted")),
     VoiceProfile("thorsten_whisper", _DE, "de_DE-thorsten_emotional-medium", _M, None, "CC0",
                  speaker="whisper", speaker_id=7, accent="german",
                  tags=("whispering", "night_mode"), caveats=("same_speaker_other_emotion",)),
@@ -364,6 +376,15 @@ CHARACTERS: dict[str, CharacterProfile] = {
             _DE: "Roboter — monotoner Vocoder, die klassische Maschinenstimme",
         },
         1.009,
+    ),
+    "pup": CharacterProfile(
+        "pup", "companion",
+        {
+            _EN: "Pup — a small, eager rescue-dog voice for a child",
+            _RO: "Cățel — o voce mică și entuziastă de câine salvator, pentru un copil",
+            _DE: "Welpe — eine kleine, eifrige Rettungshund-Stimme für ein Kind",
+        },
+        0.09,
     ),
     "alien_ring": CharacterProfile(
         "alien_ring", "alien",

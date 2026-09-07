@@ -35,6 +35,17 @@ class TurnHandler(ABC):
         """Answer in the language the user spoke, unless overridden."""
         return transcript.language
 
+    def reply_voice(self, transcript: Transcript) -> str | None:
+        """Which voice to answer in, or None for the language's configured default.
+
+        The seam exists because WHO is being spoken to is known on the reasoning side and
+        nowhere else. `services/voice` cannot tell that a question is about somebody's
+        child, and should not learn how — that is product knowledge, and it changes. This
+        is the same shape as `reply_language`: a decision the handler owns, applied by the
+        pipeline.
+        """
+        return None
+
 
 class EchoTurnHandler(TurnHandler):
     """Repeats what it heard, in the language it was heard in.
